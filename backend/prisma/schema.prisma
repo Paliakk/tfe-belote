@@ -1,0 +1,210 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// Chargement des variables d’environnement
+// --- Début du fichier schema.prisma ---
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Joueur {
+  id                 Int      @id @default(autoincrement())
+  username           String   @unique
+  email              String   @unique
+  passwordHash       String
+  estConnecte        Boolean  @default(false)
+  derniereConnexion  DateTime @default(now())
+  connectionId       String?
+
+  mains              Main[]
+  encheres           Enchere[]
+  equipes            EquipeJoueur[]
+  plisGagnes         Pli[]            @relation("GagnantPli")
+  donneurDeManches   Manche[]         @relation("Donneur")
+  beloteDansManches  Manche[]         @relation("Beloteur")
+  createurLobbys     Lobby[]          @relation("CreateurLobby")
+  pliCartes          PliCarte[]
+}
+
+model Couleur {
+  id             Int     @id @default(autoincrement())
+  nom            String  @unique
+  cartes         Carte[]
+  manchesAtout   Manche[] @relation("CouleurAtout")
+  encheres       Enchere[]
+}
+
+model Carte {
+  id               Int      @id @default(autoincrement())
+  couleurId        Int
+  valeur           String
+  pointsAtout      Int
+  pointsNonAtout   Int
+
+  couleur          Couleur @relation(fields: [couleurId], references: [id])
+  mains            Main[]
+  pliCartes        PliCarte[]
+  retourneeDans    Manche[] @relation("CarteRetournee")
+}
+
+model Partie {
+  id              Int       @id @default(autoincrement())
+  statut          String    @default("waiting")
+  createdAt       DateTime  @default(now())
+  scoreMax        Int
+  nombreJoueurs   Int       @default(4)
+
+  equipes         Equipe[]
+  manches         Manche[]
+  lobby           Lobby?
+}
+
+model Equipe {
+  id            Int     @id @default(autoincrement())
+  partieId      Int
+  numero        Int
+
+  partie        Partie  @relation(fields: [partieId], references: [id])
+  joueurs       EquipeJoueur[]
+  scores        ScoreManche[]
+}
+
+model EquipeJoueur {
+  equipeId     Int
+  joueurId     Int
+  ordreSiege   Int
+
+  equipe       Equipe @relation(fields: [equipeId], references: [id])
+  joueur       Joueur @relation(fields: [joueurId], references: [id])
+
+  @@id([equipeId, joueurId])
+  @@unique([ordreSiege])
+}
+
+model Manche {
+  id                   Int       @id @default(autoincrement())
+  partieId             Int
+  numero               Int
+  couleurAtoutId       Int?
+  donneurJoueurId      Int?
+  beloteJoueurId       Int?
+  createdAt            DateTime  @default(now())
+  carteRetourneeId     Int?
+
+  partie               Partie     @relation(fields: [partieId], references: [id])
+  couleurAtout         Couleur?   @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
+  donneur              Joueur?    @relation("Donneur", fields: [donneurJoueurId], references: [id])
+  beloteJoueur         Joueur?    @relation("Beloteur", fields: [beloteJoueurId], references: [id])
+  carteRetournee       Carte?     @relation("CarteRetournee", fields: [carteRetourneeId], references: [id])
+
+  mains                Main[]
+  encheres             Enchere[]
+  plis                 Pli[]
+  scores               ScoreManche[]
+}
+
+model Main {
+  id         Int     @id @default(autoincrement())
+  joueurId   Int
+  mancheId   Int
+  carteId    Int
+  jouee      Boolean @default(false)
+
+  joueur     Joueur  @relation(fields: [joueurId], references: [id])
+  manche     Manche  @relation(fields: [mancheId], references: [id])
+  carte      Carte   @relation(fields: [carteId], references: [id])
+}
+
+model Enchere {
+  id              Int      @id @default(autoincrement())
+  joueurId        Int
+  mancheId        Int
+  valeur          String
+  enchereType     EnchereType
+  couleurAtoutId  Int?
+  encherePoints   Int?
+  createdAt       DateTime @default(now())
+
+  joueur          Joueur   @relation(fields: [joueurId], references: [id])
+  manche          Manche   @relation(fields: [mancheId], references: [id])
+  couleurAtout    Couleur? @relation(fields: [couleurAtoutId], references: [id])
+}
+
+enum EnchereType {
+  pass
+  take_card
+  choose_color
+}
+
+model Pli {
+  id           Int      @id @default(autoincrement())
+  mancheId     Int
+  numero       Int
+  gagnantId    Int?
+
+  manche       Manche   @relation(fields: [mancheId], references: [id])
+  gagnant      Joueur?  @relation("GagnantPli", fields: [gagnantId], references: [id])
+  cartes       PliCarte[]
+}
+
+model PliCarte {
+  id         Int     @id @default(autoincrement())
+  pliId      Int
+  joueurId   Int
+  carteId    Int
+  ordre      Int
+
+  pli        Pli     @relation(fields: [pliId], references: [id])
+  joueur     Joueur  @relation(fields: [joueurId], references: [id])
+  carte      Carte   @relation(fields: [carteId], references: [id])
+}
+
+model Lobby {
+  id           Int      @id @default(autoincrement())
+  partieId     Int?     @unique
+  nom          String
+  password     String?
+  createurId   Int
+  createdAt    DateTime @default(now())
+  statut       String   @default("en_attente")
+
+  partie       Partie?  @relation(fields: [partieId], references: [id])
+  createur     Joueur   @relation("CreateurLobby", fields: [createurId], references: [id])
+}
+
+model ScoreManche {
+  id        Int     @id @default(autoincrement())
+  mancheId  Int
+  equipeId  Int
+  points    Int
+  createdAt DateTime @default(now())
+
+  manche    Manche  @relation(fields: [mancheId], references: [id])
+  equipe    Equipe  @relation(fields: [equipeId], references: [id])
+  bonus     Bonus[]
+}
+
+model Bonus {
+  id           Int     @id @default(autoincrement())
+  scoreboardId Int
+  type         BonusType
+  points       Int
+
+  score        ScoreManche @relation(fields: [scoreboardId], references: [id])
+}
+
+enum BonusType {
+  belote
+  capot
+  dix_de_der
+}
+
+
