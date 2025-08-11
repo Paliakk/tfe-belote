@@ -18,7 +18,7 @@ export class LobbyService {
         //1. Vérifier si le créateur existe
         const joueurExiste = await this.prisma.joueur.findUnique({
             where: { id: createurId },
-            select: {id:true}
+            select: { id: true }
         });
         if (!joueurExiste) {
             throw new BadRequestException(`Le joueur ${createurId} n'existe pas.`);
@@ -30,30 +30,30 @@ export class LobbyService {
                 createurId,
                 statut: 'en_attente',
             },
-            select: {id:true}
+            select: { id: true }
         })
         if (lobbyExistant) {
             throw new BadRequestException(`Vous avez déjà un lobby actif (id=${lobbyExistant.id}).`)
         }
         //3. Transaction: créer le lobby PUIS ajouter le créateur comme membre
-        const lobbyCree = await this.prisma.$transaction( async(tx)=>{
+        const lobbyCree = await this.prisma.$transaction(async (tx) => {
             //3.1 Créer le lobby
             const lobby = await tx.lobby.create({
                 data: {
                     nom: dto.nom,
                     password: dto.password,
                     statut: 'en_attente',
-                    createur: {connect: {id:createurId}}
+                    createur: { connect: { id: createurId } }
                 },
-                include:{
-                    createur: {select: {id:true, username:true}}
+                include: {
+                    createur: { select: { id: true, username: true } }
                 }
             })
             //3.2 Ajouter le créateur comme membre de ce lobby
             await tx.lobbyJoueur.create({
                 data: {
                     lobbyId: lobby.id,
-                    joueurId:createurId
+                    joueurId: createurId
                 }
             })
             return lobby
@@ -119,32 +119,32 @@ export class LobbyService {
         }
         // Transaction SERI ALIZABLE: empêche la surcapacité et les doublons en concurrence
         return this.prisma.$transaction(
-            async(tx)=> {
+            async (tx) => {
                 // Déjà membre de ce lobby?
                 const dejaMembre = await tx.lobbyJoueur.findUnique({
-                    where: {lobbyId_joueurId:{lobbyId,joueurId}}
+                    where: { lobbyId_joueurId: { lobbyId, joueurId } }
                 })
-                if(dejaMembre){throw new BadRequestException('Vous êtes déjà dans ce lobby.')}
+                if (dejaMembre) { throw new BadRequestException('Vous êtes déjà dans ce lobby.') }
                 //Déjà membre d'un autre lobby en attente?
                 const autreLobby = await tx.lobbyJoueur.findFirst({
-                    where: {joueurId, lobby:{statut:'en_attente'}},
-                    select:{lobbyId:true}
+                    where: { joueurId, lobby: { statut: 'en_attente' } },
+                    select: { lobbyId: true }
                 })
-                if(autreLobby && autreLobby.lobbyId !== lobbyId){throw new BadRequestException(`Vous êtes déjà dans un lobby en attente (id=${autreLobby.lobbyId}).`)}
+                if (autreLobby && autreLobby.lobbyId !== lobbyId) { throw new BadRequestException(`Vous êtes déjà dans un lobby en attente (id=${autreLobby.lobbyId}).`) }
 
                 //Capacité stricte (recomptée dans la transaction)
-                const count= await tx.lobbyJoueur.count({where: {lobbyId}})
-                if(count >= 4){throw new BadRequestException('Le lobby est plein (4/4)')}
+                const count = await tx.lobbyJoueur.count({ where: { lobbyId } })
+                if (count >= 4) { throw new BadRequestException('Le lobby est plein (4/4)') }
 
                 //Insert membre
-                await tx.lobbyJoueur.create({data:{lobbyId,joueurId}})
+                await tx.lobbyJoueur.create({ data: { lobbyId, joueurId } })
 
                 //Etat à jour
                 const updated = await tx.lobby.findUnique({
-                    where:{id:lobbyId},
+                    where: { id: lobbyId },
                     include: {
-                        createur: {select: {id: true, username: true}},
-                        membres: {include: {joueur:{select:{id:true,username:true}}}}
+                        createur: { select: { id: true, username: true } },
+                        membres: { include: { joueur: { select: { id: true, username: true } } } }
                     }
                 })
                 return {
@@ -158,7 +158,7 @@ export class LobbyService {
                     membres: updated!.membres.map((m) => m.joueur),
                 }
             },
-            {isolationLevel:'Serializable'}
+            { isolationLevel: 'Serializable' }
         )
     }
     /**
@@ -178,5 +178,39 @@ export class LobbyService {
             nbMembres: lobby.membres.length,
             membres: lobby.membres.map((m) => m.joueur)
         }
+    }
+
+    /**
+     * Quitter un lobby dont le statu est 'en_attente'
+     */
+    async leave(lobbyId: number, joueurId: number) {
+        return this.prisma.$transaction(async (tx) => {
+            //1. Récupérer le lobby
+            const lobby = await tx.lobby.findUnique({
+                where: { id: lobbyId },
+                include: { membres: true }
+            })
+            if (!lobby) { throw new NotFoundException(`Lobby ${lobbyId} introuvable.`) }
+            //2. Vérifier que le joueur est bien membre
+            const isMember = lobby.membres.some(m => m.joueurId === joueurId)
+            if (!isMember) { throw new BadRequestException(`Le joueur ${joueurId} n'est pas membre du lobby.`) }
+            //3. Cas : Crétauer quitte -> suppression du lobby
+            if (lobby.createurId === joueurId) {
+                await tx.lobbyJoueur.deleteMany({where:{lobbyId}})
+                await tx.lobby.delete({ where: { id: lobbyId } })
+                return { message: `Lobby ${lobbyId} supprimé car le créateur est parti.` }
+            }
+            //4. Cas : autre joueur quitte -> suppression de son entrée
+            await tx.lobbyJoueur.delete({
+                where: { lobbyId_joueurId: { lobbyId, joueurId } }
+            })
+            //5. Vérifier si plus aucun membre -> supprimer le lobby
+            const remaining = await tx.lobbyJoueur.count({ where: { lobbyId } })
+            if (remaining === 0) {
+                await tx.lobby.delete({ where: { id: lobbyId } })
+                return { message: `Lobby ${lobbyId} supprimé (dernier joueur parti).` }
+            }
+            return { message: `Joueur ${joueurId} a quitté le lobby ${lobbyId}.` }
+        })
     }
 }

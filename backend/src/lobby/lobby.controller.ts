@@ -3,6 +3,7 @@ import { LobbyService } from './lobby.service';
 import { CreateLobbyDto } from './dto/creat-lobby.dto';
 import { create } from 'domain';
 import { JoinLobbyDto } from './dto/join-lobby.dto';
+import { LeaveLobbyDto } from './dto/leave-lobby.dto';
 
 @Controller('lobby')
 export class LobbyController {
@@ -67,5 +68,13 @@ export class LobbyController {
     @Get(':id/members')
     async listMembers(@Param('id', ParseIntPipe) id: number) {
         return this.lobbyService.listMembers(id)
+    }
+    //UC04b - Quitter un lobby
+    @Post(':id/leave')
+    async leave(
+        @Param('id', ParseIntPipe) lobbyId: number,
+        @Body() dto: LeaveLobbyDto
+    ) {
+        return this.lobbyService.leave(lobbyId, dto.joueurId)
     }
 }
