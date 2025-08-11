@@ -4,6 +4,7 @@ import { CreateLobbyDto } from './dto/creat-lobby.dto';
 import { create } from 'domain';
 import { JoinLobbyDto } from './dto/join-lobby.dto';
 import { LeaveLobbyDto } from './dto/leave-lobby.dto';
+import { StartGameDto } from './dto/start-game.dto';
 
 @Controller('lobby')
 export class LobbyController {
@@ -17,7 +18,7 @@ export class LobbyController {
     @Post()
     @UsePipes(new ValidationPipe({ whitelist: true }))
     async createLobby(@Body() dto: CreateLobbyDto) {
-        const fakeCreateurId = 5; // --> Faudra remplacer ceci
+        const fakeCreateurId = 1; // --> Faudra remplacer ceci
         const lobby = await this.lobbyService.create(dto, fakeCreateurId)
 
         // mdp non renvoyé même si présent
@@ -76,5 +77,14 @@ export class LobbyController {
         @Body() dto: LeaveLobbyDto
     ) {
         return this.lobbyService.leave(lobbyId, dto.joueurId)
+    }
+
+    //Lancement d'une partie
+    @Post(':id/start')
+    startGame(
+        @Param('id', ParseIntPipe) lobbyId: number,
+        @Body() dto: StartGameDto
+    ) {
+        return this.lobbyService.startGame(lobbyId, dto)
     }
 }
