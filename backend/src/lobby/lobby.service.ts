@@ -5,7 +5,7 @@ import { NotFoundError } from 'rxjs';
 import { JoinLobbyDto } from './dto/join-lobby.dto';
 import { BADRESP } from 'dns';
 import { StartGameDto } from './dto/start-game.dto';
-import {Prisma} from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 @Injectable()
 export class LobbyService {
@@ -198,7 +198,7 @@ export class LobbyService {
             if (!isMember) { throw new BadRequestException(`Le joueur ${joueurId} n'est pas membre du lobby.`) }
             //3. Cas : Crétauer quitte -> suppression du lobby
             if (lobby.createurId === joueurId) {
-                await tx.lobbyJoueur.deleteMany({where:{lobbyId}})
+                await tx.lobbyJoueur.deleteMany({ where: { lobbyId } })
                 await tx.lobby.delete({ where: { id: lobbyId } })
                 return { message: `Lobby ${lobbyId} supprimé car le créateur est parti.` }
             }
@@ -227,68 +227,68 @@ export class LobbyService {
      * 6. Maj lobby -> en_cours + partieId
      */
 
-    async startGame(lobbyId: number, dto: StartGameDto){
-        const {joueurId, scoreMax} = dto
+    async startGame(lobbyId: number, dto: StartGameDto) {
+        const { joueurId, scoreMax } = dto
 
         return this.prisma.$transaction(async (tx) => {
             //1. Vérif lobby
             const lobby = await tx.lobby.findUnique({
-                where: {id:lobbyId},
-                include:{
+                where: { id: lobbyId },
+                include: {
                     membres: {
-                        include :{
-                            joueur: {select:{id: true, username: true}}
+                        include: {
+                            joueur: { select: { id: true, username: true } }
                         },
-                        orderBy: {createdAt:'asc'}
+                        orderBy: { createdAt: 'asc' }
                     }
                 }
             })
-            if(!lobby){throw new NotFoundException(`Lobby ${lobbyId} introuvable.`)}
-            if(lobby.statut !== 'en_attente') {
+            if (!lobby) { throw new NotFoundException(`Lobby ${lobbyId} introuvable.`) }
+            if (lobby.statut !== 'en_attente') {
                 throw new BadRequestException(`Lobby ${lobbyId} n'est pas en attente.`)
             }
-            if(lobby.createurId !== joueurId){
+            if (lobby.createurId !== joueurId) {
                 throw new ForbiddenException(`Seul le créateur peut lancer la partie.`)
             }
             //2. Vérif nombre joueurs
-            if(lobby.membres.length !== 4){
+            if (lobby.membres.length !== 4) {
                 throw new BadRequestException(`Il faut exactement 4 joueurs pour lancer la partie (actuel: ${lobby.membres.length}).`)
             }
             //3. Création partie
             const partie = await tx.partie.create({
-                data:{
-                    statut:'en_cours',
+                data: {
+                    statut: 'en_cours',
                     scoreMax: scoreMax ?? 301,
-                    nombreJoueurs:4
+                    nombreJoueurs: 4
                 }
             })
             //4. Création équipes (0 et 2, 1 et 3)
             const equipe1 = await tx.equipe.create({
-                data: {partieId: partie.id, numero: 1}
+                data: { partieId: partie.id, numero: 1 }
             })
             const equipe2 = await tx.equipe.create({
-                data: { partieId: partie.id, numero: 2}
+                data: { partieId: partie.id, numero: 2 }
             })
             //5. Affectation joueurs -> equipe
-            const affectations = lobby.membres.map((membre,index)=> ({
+            const affectations = lobby.membres.map((membre, index) => ({
                 equipeId: index % 2 === 0 ? equipe1.id : equipe2.id,
                 joueurId: membre.joueur.id,
                 ordreSiege: index
             }))
-            await tx.equipeJoueur.createMany({data:affectations})
+            await tx.equipeJoueur.createMany({ data: affectations })
 
             //6. Mélange des cartes
             const cartes = await tx.carte.findMany()
-            if(cartes.length <32){throw new BadRequestException('Le paquet de cartes n’est pas initialisé (32 cartes requises). Lance le seed.')}
-            const paquet = [...cartes].sort(()=> Math.random() - 0.5)
+            if (cartes.length < 32) { throw new BadRequestException('Le paquet de cartes n’est pas initialisé (32 cartes requises). Lance le seed.') }
+            const paquet = [...cartes].sort(() => Math.random() - 0.5)
 
             //7. Carte retournée = carte n°21
             const idxRetournee = 20
-            if(paquet.length <= idxRetournee){throw new BadRequestException('Paquet insuffisant pour déterminer la carte retournée (index 20).')}
+            if (paquet.length <= idxRetournee) { throw new BadRequestException('Paquet insuffisant pour déterminer la carte retournée (index 20).') }
             const carteRetournee = paquet[idxRetournee]
             //8. Création manche 1
             const manche = await tx.manche.create({
-                data:{
+                data: {
                     partieId: partie.id,
                     numero: 1,
                     donneurJoueurId: joueurId,
@@ -297,20 +297,20 @@ export class LobbyService {
             })
             //9. Distribution initiale (5 cartes/joueur)
             const mainsData: Prisma.MainCreateManyInput[] = lobby.membres.flatMap((membre, idx) => {
-            const cartesJoueur = paquet.slice(idx * 5, idx * 5 + 5);
-            return cartesJoueur.map(carte => ({
-                joueurId: membre.joueur.id,
-                mancheId: manche.id,
-                carteId: carte.id,
-                jouee: false,
-            }));
+                const cartesJoueur = paquet.slice(idx * 5, idx * 5 + 5);
+                return cartesJoueur.map(carte => ({
+                    joueurId: membre.joueur.id,
+                    mancheId: manche.id,
+                    carteId: carte.id,
+                    jouee: false,
+                }));
             });
             // 10) Insert des mains
             await tx.main.createMany({ data: mainsData });
 
             //9. MAJ lobby
             await tx.lobby.update({
-                where: {id: lobbyId},
+                where: { id: lobbyId },
                 data: {
                     statut: 'en_cours',
                     partieId: partie.id
@@ -318,24 +318,24 @@ export class LobbyService {
             })
             //10 Réponse
             return {
-                message :`Partie ${partie.id} lancée depuis le lobby ${lobbyId}`,
+                message: `Partie ${partie.id} lancée depuis le lobby ${lobbyId}`,
                 partie: {
                     id: partie.id,
                     scoreMax: partie.scoreMax,
-                    statut : partie.statut
+                    statut: partie.statut
                 },
-                manche:{
+                manche: {
                     id: manche.id,
-                    numero:manche.numero,
+                    numero: manche.numero,
                     donneurId: manche.donneurJoueurId,
-                    carteRetournee:carteRetournee
+                    carteRetournee: carteRetournee
                 },
-                equipes:[
-                    {id: equipe1.id, joueurs: affectations.filter(a=> a.equipeId === equipe1.id)},
-                    {id: equipe2.id, joueurs: affectations.filter(a=> a.equipeId === equipe2.id)}
+                equipes: [
+                    { id: equipe1.id, joueurs: affectations.filter(a => a.equipeId === equipe1.id) },
+                    { id: equipe2.id, joueurs: affectations.filter(a => a.equipeId === equipe2.id) }
                 ]
             }
-        })
+        },{ isolationLevel: 'Serializable' })
 
     }
 }

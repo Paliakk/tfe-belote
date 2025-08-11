@@ -54,6 +54,8 @@ model Carte {
   mains         Main[]
   pliCartes     PliCarte[]
   retourneeDans Manche[]   @relation("CarteRetournee")
+
+  @@unique([couleurId, valeur])
 }
 
 model Partie {
@@ -87,7 +89,6 @@ model EquipeJoueur {
   joueur Joueur @relation(fields: [joueurId], references: [id])
 
   @@id([equipeId, joueurId])
-  @@unique([ordreSiege])
 }
 
 model Manche {
@@ -122,6 +123,8 @@ model Main {
   joueur Joueur @relation(fields: [joueurId], references: [id])
   manche Manche @relation(fields: [mancheId], references: [id])
   carte  Carte  @relation(fields: [carteId], references: [id])
+
+  @@unique([mancheId, joueurId, carteId])
 }
 
 model Enchere {
@@ -183,12 +186,12 @@ model Lobby {
 }
 
 model LobbyJoueur {
-  lobbyId    Int
-  joueurId   Int
-  createdAt  DateTime @default(now())
+  lobbyId   Int
+  joueurId  Int
+  createdAt DateTime @default(now())
 
-  lobby      Lobby   @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
-  joueur     Joueur  @relation(fields: [joueurId], references: [id], onDelete: Cascade)
+  lobby  Lobby  @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+  joueur Joueur @relation(fields: [joueurId], references: [id], onDelete: Cascade)
 
   @@id([lobbyId, joueurId])
   @@index([joueurId])
