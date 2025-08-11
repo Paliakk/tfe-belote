@@ -34,7 +34,7 @@ export class LobbyController {
     async getLobby(@Param('id', ParseIntPipe) id: number){
         const lobby = await this.lobbyService.findByIdOrThrow(id)
 
-        //Mapping de la réponse
+        //Mapping de la réponse pour ne pas renvoyer le mdp
         return{
             id: lobby.id,
             nom: lobby.nom,
