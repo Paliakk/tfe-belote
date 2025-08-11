@@ -59,15 +59,22 @@ model Carte {
 }
 
 model Partie {
-  id            Int      @id @default(autoincrement())
-  statut        String   @default("waiting")
-  createdAt     DateTime @default(now())
+  id            Int          @id @default(autoincrement())
+  statut        PartieStatut @default(en_attente)
+  createdAt     DateTime     @default(now())
   scoreMax      Int
-  nombreJoueurs Int      @default(4)
+  nombreJoueurs Int          @default(4)
 
   equipes Equipe[]
   manches Manche[]
   lobby   Lobby?
+}
+
+enum PartieStatut {
+  en_attente
+  en_cours
+  finie
+  abandonnee
 }
 
 model Equipe {

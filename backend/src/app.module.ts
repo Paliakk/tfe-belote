@@ -4,9 +4,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { LobbyModule } from './lobby/lobby.module';
+import { GameModule } from './game/game.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule,],
+  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, GameModule,],
   controllers: [AppController],
   providers: [AppService],
 })
