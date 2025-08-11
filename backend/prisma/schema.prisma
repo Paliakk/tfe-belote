@@ -16,126 +16,127 @@ generator client {
 }
 
 model Joueur {
-  id                 Int      @id @default(autoincrement())
-  username           String   @unique
-  email              String   @unique
-  passwordHash       String
-  estConnecte        Boolean  @default(false)
-  derniereConnexion  DateTime @default(now())
-  connectionId       String?
+  id                Int      @id @default(autoincrement())
+  username          String   @unique
+  email             String   @unique
+  passwordHash      String
+  estConnecte       Boolean  @default(false)
+  derniereConnexion DateTime @default(now())
+  connectionId      String?
 
-  mains              Main[]
-  encheres           Enchere[]
-  equipes            EquipeJoueur[]
-  plisGagnes         Pli[]            @relation("GagnantPli")
-  donneurDeManches   Manche[]         @relation("Donneur")
-  beloteDansManches  Manche[]         @relation("Beloteur")
-  createurLobbys     Lobby[]          @relation("CreateurLobby")
-  pliCartes          PliCarte[]
+  mains             Main[]
+  encheres          Enchere[]
+  equipes           EquipeJoueur[]
+  plisGagnes        Pli[]          @relation("GagnantPli")
+  donneurDeManches  Manche[]       @relation("Donneur")
+  beloteDansManches Manche[]       @relation("Beloteur")
+  createurLobbys    Lobby[]        @relation("CreateurLobby")
+  pliCartes         PliCarte[]
+  lobbys            LobbyJoueur[]
 }
 
 model Couleur {
-  id             Int     @id @default(autoincrement())
-  nom            String  @unique
-  cartes         Carte[]
-  manchesAtout   Manche[] @relation("CouleurAtout")
-  encheres       Enchere[]
+  id           Int       @id @default(autoincrement())
+  nom          String    @unique
+  cartes       Carte[]
+  manchesAtout Manche[]  @relation("CouleurAtout")
+  encheres     Enchere[]
 }
 
 model Carte {
-  id               Int      @id @default(autoincrement())
-  couleurId        Int
-  valeur           String
-  pointsAtout      Int
-  pointsNonAtout   Int
+  id             Int    @id @default(autoincrement())
+  couleurId      Int
+  valeur         String
+  pointsAtout    Int
+  pointsNonAtout Int
 
-  couleur          Couleur @relation(fields: [couleurId], references: [id])
-  mains            Main[]
-  pliCartes        PliCarte[]
-  retourneeDans    Manche[] @relation("CarteRetournee")
+  couleur       Couleur    @relation(fields: [couleurId], references: [id])
+  mains         Main[]
+  pliCartes     PliCarte[]
+  retourneeDans Manche[]   @relation("CarteRetournee")
 }
 
 model Partie {
-  id              Int       @id @default(autoincrement())
-  statut          String    @default("waiting")
-  createdAt       DateTime  @default(now())
-  scoreMax        Int
-  nombreJoueurs   Int       @default(4)
+  id            Int      @id @default(autoincrement())
+  statut        String   @default("waiting")
+  createdAt     DateTime @default(now())
+  scoreMax      Int
+  nombreJoueurs Int      @default(4)
 
-  equipes         Equipe[]
-  manches         Manche[]
-  lobby           Lobby?
+  equipes Equipe[]
+  manches Manche[]
+  lobby   Lobby?
 }
 
 model Equipe {
-  id            Int     @id @default(autoincrement())
-  partieId      Int
-  numero        Int
+  id       Int @id @default(autoincrement())
+  partieId Int
+  numero   Int
 
-  partie        Partie  @relation(fields: [partieId], references: [id])
-  joueurs       EquipeJoueur[]
-  scores        ScoreManche[]
+  partie  Partie         @relation(fields: [partieId], references: [id])
+  joueurs EquipeJoueur[]
+  scores  ScoreManche[]
 }
 
 model EquipeJoueur {
-  equipeId     Int
-  joueurId     Int
-  ordreSiege   Int
+  equipeId   Int
+  joueurId   Int
+  ordreSiege Int
 
-  equipe       Equipe @relation(fields: [equipeId], references: [id])
-  joueur       Joueur @relation(fields: [joueurId], references: [id])
+  equipe Equipe @relation(fields: [equipeId], references: [id])
+  joueur Joueur @relation(fields: [joueurId], references: [id])
 
   @@id([equipeId, joueurId])
   @@unique([ordreSiege])
 }
 
 model Manche {
-  id                   Int       @id @default(autoincrement())
-  partieId             Int
-  numero               Int
-  couleurAtoutId       Int?
-  donneurJoueurId      Int?
-  beloteJoueurId       Int?
-  createdAt            DateTime  @default(now())
-  carteRetourneeId     Int?
+  id               Int      @id @default(autoincrement())
+  partieId         Int
+  numero           Int
+  couleurAtoutId   Int?
+  donneurJoueurId  Int?
+  beloteJoueurId   Int?
+  createdAt        DateTime @default(now())
+  carteRetourneeId Int?
 
-  partie               Partie     @relation(fields: [partieId], references: [id])
-  couleurAtout         Couleur?   @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
-  donneur              Joueur?    @relation("Donneur", fields: [donneurJoueurId], references: [id])
-  beloteJoueur         Joueur?    @relation("Beloteur", fields: [beloteJoueurId], references: [id])
-  carteRetournee       Carte?     @relation("CarteRetournee", fields: [carteRetourneeId], references: [id])
+  partie         Partie   @relation(fields: [partieId], references: [id])
+  couleurAtout   Couleur? @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
+  donneur        Joueur?  @relation("Donneur", fields: [donneurJoueurId], references: [id])
+  beloteJoueur   Joueur?  @relation("Beloteur", fields: [beloteJoueurId], references: [id])
+  carteRetournee Carte?   @relation("CarteRetournee", fields: [carteRetourneeId], references: [id])
 
-  mains                Main[]
-  encheres             Enchere[]
-  plis                 Pli[]
-  scores               ScoreManche[]
+  mains    Main[]
+  encheres Enchere[]
+  plis     Pli[]
+  scores   ScoreManche[]
 }
 
 model Main {
-  id         Int     @id @default(autoincrement())
-  joueurId   Int
-  mancheId   Int
-  carteId    Int
-  jouee      Boolean @default(false)
+  id       Int     @id @default(autoincrement())
+  joueurId Int
+  mancheId Int
+  carteId  Int
+  jouee    Boolean @default(false)
 
-  joueur     Joueur  @relation(fields: [joueurId], references: [id])
-  manche     Manche  @relation(fields: [mancheId], references: [id])
-  carte      Carte   @relation(fields: [carteId], references: [id])
+  joueur Joueur @relation(fields: [joueurId], references: [id])
+  manche Manche @relation(fields: [mancheId], references: [id])
+  carte  Carte  @relation(fields: [carteId], references: [id])
 }
 
 model Enchere {
-  id              Int      @id @default(autoincrement())
-  joueurId        Int
-  mancheId        Int
-  valeur          String
-  enchereType     EnchereType
-  couleurAtoutId  Int?
-  encherePoints   Int?
-  createdAt       DateTime @default(now())
+  id             Int         @id @default(autoincrement())
+  joueurId       Int
+  mancheId       Int
+  valeur         String
+  enchereType    EnchereType
+  couleurAtoutId Int?
+  encherePoints  Int?
+  createdAt      DateTime    @default(now())
 
-  joueur          Joueur   @relation(fields: [joueurId], references: [id])
-  manche          Manche   @relation(fields: [mancheId], references: [id])
-  couleurAtout    Couleur? @relation(fields: [couleurAtoutId], references: [id])
+  joueur       Joueur   @relation(fields: [joueurId], references: [id])
+  manche       Manche   @relation(fields: [mancheId], references: [id])
+  couleurAtout Couleur? @relation(fields: [couleurAtoutId], references: [id])
 }
 
 enum EnchereType {
@@ -145,60 +146,73 @@ enum EnchereType {
 }
 
 model Pli {
-  id           Int      @id @default(autoincrement())
-  mancheId     Int
-  numero       Int
-  gagnantId    Int?
+  id        Int  @id @default(autoincrement())
+  mancheId  Int
+  numero    Int
+  gagnantId Int?
 
-  manche       Manche   @relation(fields: [mancheId], references: [id])
-  gagnant      Joueur?  @relation("GagnantPli", fields: [gagnantId], references: [id])
-  cartes       PliCarte[]
+  manche  Manche     @relation(fields: [mancheId], references: [id])
+  gagnant Joueur?    @relation("GagnantPli", fields: [gagnantId], references: [id])
+  cartes  PliCarte[]
 }
 
 model PliCarte {
-  id         Int     @id @default(autoincrement())
-  pliId      Int
-  joueurId   Int
-  carteId    Int
-  ordre      Int
+  id       Int @id @default(autoincrement())
+  pliId    Int
+  joueurId Int
+  carteId  Int
+  ordre    Int
 
-  pli        Pli     @relation(fields: [pliId], references: [id])
-  joueur     Joueur  @relation(fields: [joueurId], references: [id])
-  carte      Carte   @relation(fields: [carteId], references: [id])
+  pli    Pli    @relation(fields: [pliId], references: [id])
+  joueur Joueur @relation(fields: [joueurId], references: [id])
+  carte  Carte  @relation(fields: [carteId], references: [id])
 }
 
 model Lobby {
-  id           Int      @id @default(autoincrement())
-  partieId     Int?     @unique
-  nom          String
-  password     String?
-  createurId   Int
-  createdAt    DateTime @default(now())
-  statut       String   @default("en_attente")
+  id         Int      @id @default(autoincrement())
+  partieId   Int?     @unique
+  nom        String
+  password   String?
+  createurId Int
+  createdAt  DateTime @default(now())
+  statut     String   @default("en_attente")
 
-  partie       Partie?  @relation(fields: [partieId], references: [id])
-  createur     Joueur   @relation("CreateurLobby", fields: [createurId], references: [id])
+  partie   Partie?       @relation(fields: [partieId], references: [id])
+  createur Joueur        @relation("CreateurLobby", fields: [createurId], references: [id])
+  membres  LobbyJoueur[]
+}
+
+model LobbyJoueur {
+  lobbyId   Int
+  joueurId  Int
+  createdAt DateTime @default(now())
+
+  lobby  Lobby  @relation(fields: [lobbyId], references: [id])
+  joueur Joueur @relation(fields: [joueurId], references: [id])
+
+  @@id([lobbyId, joueurId]) // un joueur donné ne peut être dans le même lobby qu'une fois
+  @@index([joueurId]) // pratique pour trouver où est le joueur
 }
 
 model ScoreManche {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   mancheId  Int
   equipeId  Int
   points    Int
   createdAt DateTime @default(now())
 
-  manche    Manche  @relation(fields: [mancheId], references: [id])
-  equipe    Equipe  @relation(fields: [equipeId], references: [id])
-  bonus     Bonus[]
+  manche Manche  @relation(fields: [mancheId], references: [id])
+  equipe Equipe  @relation(fields: [equipeId], references: [id])
+  bonus  Bonus[]
 }
 
 model Bonus {
-  id           Int     @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   scoreboardId Int
   type         BonusType
   points       Int
 
-  score        ScoreManche @relation(fields: [scoreboardId], references: [id])
+  score ScoreManche @relation(fields: [scoreboardId], references: [id])
 }
 
 enum BonusType {
@@ -206,5 +220,3 @@ enum BonusType {
   capot
   dix_de_der
 }
-
-
