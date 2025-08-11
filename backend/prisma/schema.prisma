@@ -183,15 +183,15 @@ model Lobby {
 }
 
 model LobbyJoueur {
-  lobbyId   Int
-  joueurId  Int
-  createdAt DateTime @default(now())
+  lobbyId    Int
+  joueurId   Int
+  createdAt  DateTime @default(now())
 
-  lobby  Lobby  @relation(fields: [lobbyId], references: [id])
-  joueur Joueur @relation(fields: [joueurId], references: [id])
+  lobby      Lobby   @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+  joueur     Joueur  @relation(fields: [joueurId], references: [id], onDelete: Cascade)
 
-  @@id([lobbyId, joueurId]) // un joueur donné ne peut être dans le même lobby qu'une fois
-  @@index([joueurId]) // pratique pour trouver où est le joueur
+  @@id([lobbyId, joueurId])
+  @@index([joueurId])
 }
 
 model ScoreManche {
