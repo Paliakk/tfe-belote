@@ -108,6 +108,13 @@ model Manche {
   createdAt        DateTime @default(now())
   carteRetourneeId Int?
 
+  // Etat d'enchère
+
+  tourActuel     Int   @default(1) // Tour 1 ou 2                       
+  joueurActuelId Int // Joueur à qui c'est de parler                  
+  preneurId      Int? // Déterminé lorsque quelqu'un prend             
+  paquet         Int[] // Ordre du paquet (32 ids de Carte)    
+
   partie         Partie   @relation(fields: [partieId], references: [id])
   couleurAtout   Couleur? @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
   donneur        Joueur?  @relation("Donneur", fields: [donneurJoueurId], references: [id])

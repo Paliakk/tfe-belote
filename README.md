@@ -1,134 +1,238 @@
-# TFE – Belote en ligne (Backend NestJS + Prisma + PostgreSQL)
+# Belote TFE — Backend (NestJS + Prisma + PostgreSQL)
 
-Backend du projet de Belote en ligne (NestJS, TypeScript, Prisma, PostgreSQL).  
-Architecture modulaire par use cases. Toute la logique de jeu est côté serveur.
+> **Stack**: NestJS (TypeScript) · Prisma ORM · PostgreSQL · Socket.io (à venir)
 
-## ⚙️ Prérequis
-- Node.js 18+
-- PostgreSQL local (DB `belote`)
-- VS Code (Thunder Client conseillé) / Postman
-- Prisma CLI
+## 0) Démarrage rapide
 
-## 🚀 Démarrage
 ```bash
-# 1) Installer
+# 1) Dépendances
 npm install
 
-# 2) Variables d’environnement (backend/.env)
-# DATABASE_URL="postgresql://postgres:<mdp>@localhost:5432/belote"
-# JWT_SECRET=secretdevTFE
-# AUTH0_DOMAIN=...
-# AUTH0_AUDIENCE=…
+# 2) Configuration (backend/.env)
+# exemple minimal
+DATABASE_URL="postgresql://postgres:<mdp>@localhost:5432/belote"
+JWT_SECRET=secretdevTFE
+
+# 3) Prisma
+npx prisma migrate dev
+npx prisma generate
+
+# 4) Lancer l'API
+npm run start:dev
+```
 
 ---
 
-## 🔧 Seed de base (couleurs + 32 cartes)
-Un seed est fourni pour initialiser les 4 couleurs et les 32 cartes.
+## 1) Modèles et terminologie
+
+* **Partie**: enchaînement de **manches** jusqu’au score cible (ex: 301).
+* **Manche (Donne)**: 2 tours d’enchères (UC06), puis **8 plis** (UC07+UC11+UC12).
+* **Pli**: 4 cartes jouées (1 par joueur).
+
+**Schéma (extraits)**
+
+* `Joueur`, `Lobby`, `Partie`, `Equipe`, `EquipeJoueur(ordreSiege)`
+* `Manche`: `tourActuel`, `joueurActuelId`, `preneurId`, `paquet(Int[])`, `carteRetourneeId`
+* `Main` (cartes du joueur), `Enchere`, `Pli`, `PliCarte`, `ScoreManche`, `Bonus`
+
+---
+
+## 2) Endpoints API (MVP)
+
+> Préfixe local par défaut: `http://localhost:3000`
+
+### 2.1 Lobby (UC03, UC04, UC04b, UC05)
+
+#### Créer un lobby (UC03)
+
+**POST** `/lobby`
+
+```json
+{
+  "nom": "Salon de test",
+  "password": "optionnel",
+  "createurId": 1
+}
+```
+
+**201** → `{ id, nom, statut, createurId, ... }`
+
+#### Récupérer un lobby
+
+**GET** `/lobby/:id`
+
+#### Rejoindre un lobby (UC04)
+
+**POST** `/lobby/:id/join`
+
+```json
+{ "joueurId": 2, "password": "si défini" }
+```
+
+**200** → `{ message: "Rejoint" }`
+
+#### Quitter un lobby (UC04b)
+
+**POST** `/lobby/:id/leave`
+
+```json
+{ "joueurId": 2 }
+```
+
+**200** →
+
+* Si **créateur** quitte → suppression du lobby + éjection de tous.
+* Sinon → membre retiré, lobby mis à jour.
+
+#### Lancer une partie (UC05)
+
+**POST** `/lobby/:id/start`
+
+```json
+{ "joueurId": 1, "scoreMax": 301 }
+```
+
+**200** → crée `Partie`, `Equipe`s, `Manche #1` (5 cartes/joueur, carte #21 retournée), initialise enchères.
+
+---
+
+### 2.2 Bidding / Enchères (UC06)
+
+#### Manche active pour une partie
+
+**GET** `/bidding/active/:partieId`
+**200** → `{ id: <mancheId>, numero: <n> }`
+
+#### État des enchères
+
+**GET** `/bidding/state/:mancheId`
+**200** →
+
+```json
+{
+  "mancheId": 3,
+  "tourActuel": 1,
+  "joueurActuelId": 2,
+  "preneurId": null,
+  "atout": null,
+  "carteRetournee": { "id": 6, "valeur": "Roi", "couleurId": 1 },
+  "historique": [ { "joueur": {"id": 2, "username": "Alice"}, "type": "pass", "at": "..." } ]
+}
+```
+
+#### Poser une enchère
+
+**POST** `/bidding/:mancheId/bid`
+
+```json
+{ "joueurId": 2, "type": "pass" }
+```
+
+Types supportés:
+
+* Tour 1: `pass` | `take_card`
+* Tour 2: `pass` | `choose_color` (⚠️ `couleurAtoutId` requis et **≠** `carteRetournee.couleurId`)
+
+**Réponses**:
+
+* Pass → `200 { message: "Pass. Joueur suivant: <id>" }`
+* Take card → `200 { message: "Preneur fixé...", ... }` (distribution complétée: preneur a la retournée +2, autres +3)
+* Choose color → `200 { message: "Preneur fixé...", ... }`
+* 8 passes (Tour1+Tour2) → `200 { message: "Donne relancée (UC14)", newMancheId: <id> }`
+* Manche périmée (après relance) → `409 { message: "...", activeMancheId, activeMancheNumero }`
+
+**Erreurs courantes**:
+
+* 400: joueur hors tour / type interdit au tour / couleur identique à la retournée / missing `couleurAtoutId`
+
+---
+
+### 2.3 Partie (abandon global, ENF‑7)
+
+#### Quitter une partie (abandon global)
+
+**POST** `/game/:partieId/quit`
+
+```json
+{ "joueurId": 3 }
+```
+
+Effets:
+
+* `Partie.statut = 'abandonnee'`
+* `Lobby` lié remis en `en_attente`, suppression du membre qui quitte
+
+---
+
+## 3) Séquences Postman recommandées
+
+### A. Lancer et enchérir (Tour 1 → prise)
+
+1. `POST /lobby/:lobbyId/start`  → note `partieId`
+2. `GET /bidding/active/:partieId` → note `mancheId`
+3. `GET /bidding/state/:mancheId` → état initial
+4. `POST /bidding/:mancheId/bid` (pass)
+5. `POST /bidding/:mancheId/bid` (pass)
+6. `POST /bidding/:mancheId/bid` (take\_card)
+
+### B. Tour 1 complet sans preneur → Tour 2 → choose\_color
+
+1. 4× `pass` (Tour 1) → passage Tour 2
+2. `choose_color` (couleur ≠ retournée)
+
+### C. 8 passes → relance (UC14 minimal)
+
+1. 4× `pass` (Tour 1) → Tour 2
+2. 4× `pass` (Tour 2) → `{ newMancheId }`
+3. `GET /bidding/active/:partieId` → doit renvoyer `newMancheId`
+4. Toute enchère sur l’ancienne manche → `409` + `activeMancheId`
+
+---
+
+## 4) Scripts utiles
 
 ```bash
-npm run prisma:seed
+# Lint & format
+npm run lint
+npm run format
 
-# 3) Prisma
-npx prisma migrate dev --name init
+# Prisma
+npx prisma migrate dev
 npx prisma generate
-
-# 4) Lancer
-npm run start:dev
-
-
-Données de test minimales
 npx prisma studio
-Modèle Joueur → Create :
-username=TestUser, email=test@local.dev, passwordHash=hash-dev.
 
-UC03 — Créer & consulter un lobby
-POST /lobby
-Crée un lobby (le créateur est automatiquement ajouté comme membre dans LobbyJoueur).
-Pour l’instant, le créateur est createurId = 1 (sera remplacé par Auth0).
+# Dev server
+npm run start:dev
+```
 
-POST http://localhost:3000/lobby
-Content-Type: application/json
+### SQL reset (dev)
 
-{
-  "nom": "Salle du samedi soir",
-  "password": "1234"  // optionnel (public si absent)
-}
+```sql
+DELETE FROM "Main";
+DELETE FROM "Enchere";
+DELETE FROM "PliCarte";
+DELETE FROM "Pli";
+DELETE FROM "Manche";
+DELETE FROM "EquipeJoueur";
+DELETE FROM "Equipe";
+DELETE FROM "Partie";
+UPDATE "Lobby" SET "statut"='en_attente', "partieId"=NULL;
+```
 
-GET /lobby/:id
-Retourne les infos du lobby sans exposer le password.
+---
 
-GET http://localhost:3000/lobby/1
+## 5) Roadmap Backend (MVP)
 
+* **UC10**: Cartes jouables (suivre, couper, surcouper, se défausser à l’atout)
+* **UC07**: Jouer une carte (validation via UC10)
+* **UC11**: Gagnant du pli
+* **UC12**: Fin de manche, scores, bonus (Belote/Rebelote, Dix de der, Capot)
+* **UC14 (complet)**: Service dédié relance (statuts de manche, WS events, garde-fous centralisés)
 
-UC04 — Rejoindre un lobby
-POST /lobby/join
-Permet à un joueur de rejoindre un lobby en_attente (capacité 4, créateur inclus).
-Temporaire (avant Auth0) : joueurId est passé dans le body.
+---
 
+## 6) Branching & PR
 
-{
-  "lobbyId": 1,
-  "joueurId": 2,
-  "password": "1234"   // requis si lobby privé, sinon omettre
-}
-
-
-Le lobby doit exister et être en_attente.
-
-Si password est défini pour le lobby, il doit correspondre.
-
-Un joueur ne peut pas être dans deux lobbys en_attente.
-
-Capacité strictement limitée à 4 (créateur inclus).
-
-Opération sous transaction Serializable (évite les surcapacités concurrentes).
-
-GET /lobby/:id/members
-Liste les membres actuels du lobby (inclut le créateur).
-
-
-src/
-  prisma/
-    prisma.module.ts
-    prisma.service.ts
-  lobby/
-    dto/
-      create-lobby.dto.ts
-      join-lobby.dto.ts
-    lobby.controller.ts
-    lobby.service.ts
-  app.module.ts
-prisma/
-  schema.prisma
-  migrations/
-
-
-UC05 — Lancer une partie (depuis un lobby)
-POST /lobby/:id/start
-Démarre une partie à partir d’un lobby en_attente.
-Seul le créateur du lobby peut lancer. Le lobby doit contenir exactement 4 membres.
-
-{
-  "joueurId": 1,     // créateur (temp, remplacé par Auth0 plus tard)
-  "scoreMax": 301    // optionnel (défaut = 301)
-}
-
-Effets
-
-Crée Partie (statut en_cours, scoreMax, nombreJoueurs=4)
-
-Crée 2 Equipe et 4 EquipeJoueur (sièges = ordre d’entrée ; équipes = 0&2 vs 1&3)
-
-Mélange le paquet (32 cartes) et distribue 5 cartes par joueur (Main.jouee=false)
-
-Crée Manche #1 (donneur = créateur, carteRetournee = 21e carte du paquet)
-
-Met à jour le Lobby (en_cours, partieId)
-
-
-
-
-
-
-
-
+* Créer une branche par UC: `feat/uc06-bidding`, `feat/uc14-relance`, etc.
+* Commit message court + description détaillée.
+* Merge vers `main` via PR (ou GitHub Desktop) une fois les tests Postman validés.

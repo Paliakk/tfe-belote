@@ -286,20 +286,36 @@ export class LobbyService {
             const idxRetournee = 20
             if (paquet.length <= idxRetournee) { throw new BadRequestException('Paquet insuffisant pour déterminer la carte retournée (index 20).') }
             const carteRetournee = paquet[idxRetournee]
-            //8. Création manche 1
+            // Récupèrer les sièges 0 à 3 par ordre d'entrée (établis lors du join/start)
+            const seats = lobby.membres         //membres triés par createdAd asc
+                .map((m,i) => ({seat:i,joueurId:m.joueur.id}))
+            
+            const dealerSeat = seats.find(s => s.joueurId === joueurId)!.seat
+            const leftOfDealerSeat = (dealerSeat +1) %4
+            const leftOfDealerId = seats[leftOfDealerSeat].joueurId
+
+            // Stockage de l'ordre du paquet
+            const paquetIds = paquet.map (c => c.id)
+
+            //8. Création manche 1 avec état d'enchère initial
             const manche = await tx.manche.create({
                 data: {
                     partieId: partie.id,
                     numero: 1,
                     donneurJoueurId: joueurId,
-                    carteRetourneeId: carteRetournee.id
+                    carteRetourneeId: carteRetournee.id,
+                    tourActuel:1,
+                    joueurActuelId: leftOfDealerId,
+                    preneurId: null,
+                    paquet: paquetIds
                 }
             })
             //9. Distribution initiale (5 cartes/joueur)
-            const mainsData: Prisma.MainCreateManyInput[] = lobby.membres.flatMap((membre, idx) => {
-                const cartesJoueur = paquet.slice(idx * 5, idx * 5 + 5);
-                return cartesJoueur.map(carte => ({
-                    joueurId: membre.joueur.id,
+            const mainsData: Prisma.MainCreateManyInput[] = seats.flatMap((s) => {
+                const start = s.seat*5
+                const five = paquet.slice(start, start + 5)
+                return five.map((carte) => ({
+                    joueurId: s.joueurId,
                     mancheId: manche.id,
                     carteId: carte.id,
                     jouee: false,
