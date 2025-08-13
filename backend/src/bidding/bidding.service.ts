@@ -2,10 +2,11 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from 'src/prisma/prisma.service';
 import { BidType, CreateBidDto } from './dto/create-bid.dto';
 import { Prisma } from '@prisma/client';
+import { MancheService } from 'src/manche/manche.service';
 
 @Injectable()
 export class BiddingService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService, private readonly mancheService: MancheService) { }
 
     // Etat
     async getState(mancheId: number) {
@@ -162,7 +163,7 @@ export class BiddingService {
                     return { message: `Tour 1 terminé sans preneur. Passage au tour 2.` }
                 } else {
                     //Tour 2 terminé sans preneur -> UC14 Relancer donne
-                    const newMancheId = await this.relancerDonne(tx, manche)
+                    const newMancheId = await this.mancheService.relancerMancheByMancheId(manche.id)
                     return {
                         message: `Personne n'a pris au tour 2. Donne relancée (UC14).`,
                         newMancheId
@@ -303,10 +304,10 @@ export class BiddingService {
         const m = await this.prisma.manche.findFirst({
             where: { partieId },
             orderBy: [
-                {numero:'desc'},
-                {createdAt:'desc'},
-                {id:'desc'}
-            ] ,
+                { numero: 'desc' },
+                { createdAt: 'desc' },
+                { id: 'desc' }
+            ],
             select: { id: true, numero: true }
         })
         if (!m) throw new NotFoundException(`Aucune manche pour la partie ${partieId}`)

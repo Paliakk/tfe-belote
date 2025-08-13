@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { LobbyModule } from './lobby/lobby.module';
 import { GameModule } from './game/game.module';
 import { BiddingModule } from './bidding/bidding.module';
+import { MancheModule } from './manche/manche.module';
 /**
  * ============================================================
  *   📌 API Backend Belote TFE — Endpoints (MVP actuel)
@@ -141,7 +142,7 @@ Body: { "joueurId": {{joueurId}} }
  */
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, GameModule, BiddingModule,],
+  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, GameModule, BiddingModule, MancheModule,],
   controllers: [AppController],
   providers: [AppService],
 })

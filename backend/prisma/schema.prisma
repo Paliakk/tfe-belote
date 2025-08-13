@@ -66,8 +66,11 @@ model Partie {
   nombreJoueurs Int          @default(4)
 
   equipes Equipe[]
-  manches Manche[]
+  manches Manche[] @relation("Partie_Manches")
   lobby   Lobby?
+
+  mancheCouranteId Int?    @unique
+  mancheCourante   Manche? @relation("Partie_MancheCourante", fields: [mancheCouranteId], references: [id])
 }
 
 enum PartieStatut {
@@ -115,16 +118,25 @@ model Manche {
   preneurId      Int? // Déterminé lorsque quelqu'un prend             
   paquet         Int[] // Ordre du paquet (32 ids de Carte)    
 
-  partie         Partie   @relation(fields: [partieId], references: [id])
-  couleurAtout   Couleur? @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
-  donneur        Joueur?  @relation("Donneur", fields: [donneurJoueurId], references: [id])
-  beloteJoueur   Joueur?  @relation("Beloteur", fields: [beloteJoueurId], references: [id])
-  carteRetournee Carte?   @relation("CarteRetournee", fields: [carteRetourneeId], references: [id])
+  statut MancheStatut @default(active)
+
+  partie           Partie   @relation("Partie_Manches", fields: [partieId], references: [id])
+  partieCouranteDe Partie?  @relation("Partie_MancheCourante")
+  couleurAtout     Couleur? @relation("CouleurAtout", fields: [couleurAtoutId], references: [id])
+  donneur          Joueur?  @relation("Donneur", fields: [donneurJoueurId], references: [id])
+  beloteJoueur     Joueur?  @relation("Beloteur", fields: [beloteJoueurId], references: [id])
+  carteRetournee   Carte?   @relation("CarteRetournee", fields: [carteRetourneeId], references: [id])
 
   mains    Main[]
   encheres Enchere[]
   plis     Pli[]
   scores   ScoreManche[]
+}
+
+enum MancheStatut {
+  active
+  relancee
+  terminee
 }
 
 model Main {

@@ -288,14 +288,14 @@ export class LobbyService {
             const carteRetournee = paquet[idxRetournee]
             // Récupèrer les sièges 0 à 3 par ordre d'entrée (établis lors du join/start)
             const seats = lobby.membres         //membres triés par createdAd asc
-                .map((m,i) => ({seat:i,joueurId:m.joueur.id}))
-            
+                .map((m, i) => ({ seat: i, joueurId: m.joueur.id }))
+
             const dealerSeat = seats.find(s => s.joueurId === joueurId)!.seat
-            const leftOfDealerSeat = (dealerSeat +1) %4
+            const leftOfDealerSeat = (dealerSeat + 1) % 4
             const leftOfDealerId = seats[leftOfDealerSeat].joueurId
 
             // Stockage de l'ordre du paquet
-            const paquetIds = paquet.map (c => c.id)
+            const paquetIds = paquet.map(c => c.id)
 
             //8. Création manche 1 avec état d'enchère initial
             const manche = await tx.manche.create({
@@ -304,15 +304,22 @@ export class LobbyService {
                     numero: 1,
                     donneurJoueurId: joueurId,
                     carteRetourneeId: carteRetournee.id,
-                    tourActuel:1,
+                    tourActuel: 1,
                     joueurActuelId: leftOfDealerId,
                     preneurId: null,
                     paquet: paquetIds
                 }
             })
+
+            //Pointer la manche courante de la partie
+            await tx.partie.update({
+                where: { id: partie.id },
+                data: { mancheCouranteId: manche.id },
+            })
+            
             //9. Distribution initiale (5 cartes/joueur)
             const mainsData: Prisma.MainCreateManyInput[] = seats.flatMap((s) => {
-                const start = s.seat*5
+                const start = s.seat * 5
                 const five = paquet.slice(start, start + 5)
                 return five.map((carte) => ({
                     joueurId: s.joueurId,
@@ -351,7 +358,7 @@ export class LobbyService {
                     { id: equipe2.id, joueurs: affectations.filter(a => a.equipeId === equipe2.id) }
                 ]
             }
-        },{ isolationLevel: 'Serializable' })
+        }, { isolationLevel: 'Serializable' })
 
     }
 }
