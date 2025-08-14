@@ -41,7 +41,7 @@ export class LobbyController {
         return {
             id: lobby.id,
             nom: lobby.nom,
-            statu: lobby.statut,
+            statut: lobby.statut,
             estPrive: Boolean(lobby.password),
             createdAt: lobby.createdAt,
 

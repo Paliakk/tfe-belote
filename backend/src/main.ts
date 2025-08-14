@@ -9,9 +9,10 @@ async function bootstrap() {
 
   // CORS pour le front pour plus tard
   app.enableCors({
-    origin: true, // ou ['http://localhost:5173'] plus tard pour le front
+    origin: ['http://localhost:5173'], // ou ['http://localhost:5173'] plus tard pour le front
     credentials: true,
   });
   await app.listen(process.env.PORT ?? 3000);
+  
 }
 bootstrap();
