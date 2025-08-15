@@ -2,12 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RulesService } from './rules.service';
 import { Prisma } from '@prisma/client';
+import { TrickService } from './trick.service';
 
 @Injectable()
 export class PlayService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly rules: RulesService
+        private readonly rules: RulesService,
+        private readonly trick: TrickService
     ) { }
     /**
    * UC07 — Jouer une carte
@@ -18,75 +20,59 @@ export class PlayService {
    * - fait avancer le joueur (sauf si pli complet → UC11 prendra le relais)
    */
     async playCard(mancheId: number, joueurId: number, carteId: number) {
-        return this.prisma.$transaction(async (tx) => {
-            //0. Charger la manche, la partie, les seats,la main du joueur, le pli courant
+        const result = await this.prisma.$transaction(async (tx) => {
+            // 0) Charger état nécessaire
             const manche = await tx.manche.findUnique({
                 where: { id: mancheId },
                 include: {
-                    partie: {
-                        include: {
-                            equipes: { include: { joueurs: true } }
-                        }
-                    },
-                    mains: {
-                        where: { jouee: false },
-                        include: { carte: true }
-                    },
+                    partie: { include: { equipes: { include: { joueurs: true } } } },
+                    mains: { where: { jouee: false }, include: { carte: true } },
                     plis: {
                         orderBy: { numero: 'asc' },
-                        include: {
-                            cartes: {
-                                orderBy: { ordre: 'asc' },
-                                include: { carte: true }
-                            }
-                        }
+                        include: { cartes: { orderBy: { ordre: 'asc' }, include: { carte: true } } }
                     }
                 }
-            })
-            if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`)
+            });
+            if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`);
             if (manche.joueurActuelId !== joueurId) {
-                throw new ForbiddenException(`Ce n'est pas au joueur ${joueurId} de jouer.`)
+                throw new ForbiddenException(`Ce n'est pas au joueur ${joueurId} de jouer.`);
             }
 
-            //Si aucune carte en main (juste par sécurité)
-            const mainJoueur = manche.mains.filter(m => m.joueurId === joueurId).map(m => m.carte)
-            if (mainJoueur.length === 0) { throw new BadRequestException(`Le joueur ${joueurId} n'a plus de carte disponible.`) }
+            const mainJoueur = manche.mains.filter(m => m.joueurId === joueurId).map(m => m.carte);
+            if (mainJoueur.length === 0) {
+                throw new BadRequestException(`Le joueur ${joueurId} n'a plus de carte disponible.`);
+            }
 
-            //Vérifier que la carte demandée est bien dans la main
-            const carte = mainJoueur.find(c => c.id === carteId)
-            if (!carte) throw new BadRequestException(`La carte ${carteId} n'est pas dans la main du joueur.`)
+            const carte = mainJoueur.find(c => c.id === carteId);
+            if (!carte) throw new BadRequestException(`La carte ${carteId} n'est pas dans la main du joueur.`);
 
-            //Seats 0..3 + team
-            const seats = manche.partie.equipes.flatMap((eq, idxEquipe) =>
-                eq.joueurs.map(j => ({
+            const seats = manche.partie.equipes
+                .flatMap(eq => eq.joueurs.map(j => ({
                     seat: j.ordreSiege,
                     joueurId: j.joueurId,
-                    team: (j.ordreSiege % 2 === 0) ? 1 : 2 as 1 | 2,
-                }))
-            ).sort((a, b) => a.seat - b.seat);
+                    team: (j.ordreSiege % 2 === 0 ? 1 : 2) as 1 | 2,
+                })))
+                .sort((a, b) => a.seat - b.seat);
 
-            // Pli courant : dernier pli dont cartes.length < 4, sinon on en crée un
+            // Pli courant (dernier incomplet) ou création
             let pli = this.findCurrentTrick(manche);
             if (!pli || pli.cartes.length >= 4) {
                 const numero = (manche.plis.length || 0) + 1;
-                pli = await tx.pli.create({
-                    data: { mancheId, numero }
-                });
-                // Recharge pour avoir structure homogène
+                pli = await tx.pli.create({ data: { mancheId, numero } });
                 pli = await tx.pli.findUnique({
                     where: { id: pli.id },
                     include: { cartes: { orderBy: { ordre: 'asc' }, include: { carte: true } } }
                 }) as any;
             }
 
-            // ---- UC10 intégré : vérifier la légalité de la carte choisie
+            // UC10 — légalité de la carte
             const trickCards = await Promise.all(
                 pli.cartes.map(async (pc) => ({
                     ordre: pc.ordre,
-                    joueurId: (await this.findPlayerIdByPliCarte(tx, pc.id))!, // helper
+                    joueurId: (await this.findPlayerIdByPliCarte(tx, pc.id))!,
                     carte: pc.carte as any
                 }))
-            )
+            );
             const playableRes = this.rules.isPlayable({
                 cardId: carteId,
                 hand: mainJoueur,
@@ -94,60 +80,63 @@ export class PlayService {
                 atoutId: manche.couleurAtoutId,
                 seats,
                 currentPlayerId: joueurId,
-            })
+            });
             if (!playableRes.valid) {
-                // on refuse et on laisse le joueur rejouer immédiatement
                 throw new BadRequestException('Carte illégale selon UC10 (fournir/couper/surcouper).');
             }
 
-            // 1) Enregistrer la carte dans le pli (ordre = nb cartes déjà posées)
-            const ordre = pli.cartes.length;
+            // 1) Insérer la carte dans le pli
+            const ordre = pli.cartes.length; // 0..3
             await tx.pliCarte.create({
-                data: {
-                    pliId: pli.id,
-                    joueurId,
-                    carteId,
-                    ordre,
-                }
-            })
+                data: { pliId: pli.id, joueurId, carteId, ordre }
+            });
 
-            // 2) Marquer la carte comme jouée dans Main (on garde l'historique)
+            // 2) Marquer la carte "jouée"
             await tx.main.updateMany({
                 where: { joueurId, mancheId, carteId, jouee: false },
                 data: { jouee: true }
-            })
+            });
 
-            // 3) Calculer le prochain joueur actif (si pli pas complet)
+            // 3) Pli complet ?
             const nowPli = await tx.pli.findUnique({
                 where: { id: pli.id },
                 include: { cartes: { orderBy: { ordre: 'asc' } } }
             });
-            const cartesCount = nowPli!.cartes.length
+            const cartesCount = nowPli!.cartes.length;
 
             if (cartesCount < 4) {
                 const nextPlayerId = this.nextPlayerId(seats, joueurId);
                 await tx.manche.update({
                     where: { id: mancheId },
                     data: { joueurActuelId: nextPlayerId }
-                })
+                });
+
                 return {
                     message: 'Carte jouée.',
                     pliNumero: nowPli!.numero,
                     cartesDansPli: cartesCount,
                     nextPlayerId,
-                    requiresEndOfTrick: false,
+                    requiresEndOfTrick: false, // 🆕 (flag lu après le tx)
                 };
             } else {
-                // Pli complet → UC11 décidera du gagnant et du prochain joueur
+                // Pli complet → on ne clôture pas ici
                 return {
                     message: 'Carte jouée (pli complet).',
                     pliNumero: nowPli!.numero,
                     cartesDansPli: cartesCount,
                     nextPlayerId: null,
-                    requiresEndOfTrick: true,
-                }
+                    requiresEndOfTrick: true, // 🆕 (flag lu après le tx)
+                };
             }
-        }, { isolationLevel: 'Serializable' })
+        }, { isolationLevel: 'Serializable' });
+
+        // déclenchement automatique UC11 (après le tx)
+        if (result.requiresEndOfTrick) {
+            return this.trick.closeCurrentTrick(mancheId);
+        }
+
+        // Sinon on renvoie l’info UC07 classique
+        return result;
     }
 
     private findCurrentTrick(manche: any) {

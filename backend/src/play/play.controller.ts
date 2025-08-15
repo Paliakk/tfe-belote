@@ -2,10 +2,16 @@ import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs
 import { PlayService } from './play.service';
 import { RulesService } from './rules.service';
 import { PlayQueriesService } from './play.queries';
+import { TrickService } from './trick.service';
 
 @Controller('play')
 export class PlayController {
-    constructor(private readonly play: PlayService, private readonly rules: RulesService, private readonly queries: PlayQueriesService,) { }
+    constructor(
+        private readonly play: PlayService,
+        private readonly rules: RulesService,
+        private readonly queries: PlayQueriesService,
+        private readonly trick: TrickService
+    ) { }
     /** UC07 — jouer une carte */
     @Post(':mancheId/play')
     async playCard(
@@ -46,4 +52,21 @@ export class PlayController {
         return this.queries.getActiveManche(partieId)
     }
 
+    // (option tests) Clôture manuelle d’un pli (si besoin hors auto)
+    @Post(':mancheId/close-trick')
+    async closeTrick(@Param('mancheId', ParseIntPipe) mancheId: number) {
+        return this.trick.closeCurrentTrick(mancheId);
+    }
+
+    // Pli précédent (historique court)
+    @Get('previous-trick/:mancheId')
+    async previousTrick(@Param('mancheId', ParseIntPipe) mancheId: number) {
+        return this.trick.previousTrick(mancheId);
+    }
+
+    // Score live
+    @Get('score-live/:mancheId')
+    async scoreLive(@Param('mancheId', ParseIntPipe) mancheId: number) {
+        return this.trick.scoreLive(mancheId);
+    }
 }
