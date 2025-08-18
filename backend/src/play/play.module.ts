@@ -5,11 +5,12 @@ import { RulesService } from './rules.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { PlayQueriesService } from './play.queries';
 import { TrickService } from './trick.service';
+import { MancheModule } from 'src/manche/manche.module';
 
 @Module({
   providers: [PlayService, RulesService, PlayQueriesService,TrickService],
   controllers: [PlayController],
-  imports: [PrismaModule],
+  imports: [PrismaModule,MancheModule],
   exports: [PlayService, RulesService, PlayQueriesService,TrickService]
 })
 export class PlayModule { }

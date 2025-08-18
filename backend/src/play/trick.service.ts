@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RulesService } from './rules.service';
+import { MancheService } from 'src/manche/manche.service';
 
 type TrickCard = { ordre: number; joueurId: number; carte: { id: number; valeur: string; couleurId: number } }
 
@@ -9,7 +10,8 @@ type TrickCard = { ordre: number; joueurId: number; carte: { id: number; valeur:
 export class TrickService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly rules: RulesService
+        private readonly rules: RulesService,
+        private readonly mancheService: MancheService
     ) { }
 
     /**
@@ -21,7 +23,8 @@ export class TrickService {
    * - signale requiresEndOfHand si = 8 (pour UC12)
    */
     async closeCurrentTrick(mancheId: number) {
-        return this.prisma.$transaction(async (tx) => {
+        // 1) On exécute TA logique existante en transaction, et on renvoie un payload
+        const result = await this.prisma.$transaction(async (tx) => {
             //1. Charger la manche + plis + cartes
             const manche = await tx.manche.findUnique({
                 where: { id: mancheId },
@@ -108,7 +111,22 @@ export class TrickService {
                 createdNextTrick,
                 requiresEndOfHand,
             }
-        }, { isolationLevel: 'Serializable' })
+        }, { isolationLevel: 'Serializable' });
+
+        // 2) Hors transaction : si 8e pli, on enchaîne automatiquement UC12 (Fin de manche)
+        if (result.requiresEndOfHand) {
+            try {
+                const end = await this.mancheService.endOfHand(mancheId); // UC12 (appelle UC09 en interne)
+                // NOTE: plus tard, on pourra émettre un WS ici (manche:ended) avec `end`
+                return { ...result, endOfHand: end };
+            } catch (e) {
+                // On renvoie quand même l’info pli + l’erreur UC12 pour debug frontend
+                return { ...result, endOfHandError: (e as Error).message ?? 'endOfHand failed' };
+            }
+        }
+
+        // 3) Sinon, on renvoie le payload standard de fin de pli
+        return result;
     }
 
     /**
