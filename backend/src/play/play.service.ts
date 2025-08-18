@@ -3,13 +3,17 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { RulesService } from './rules.service';
 import { Prisma } from '@prisma/client';
 import { TrickService } from './trick.service';
+import { MancheService } from 'src/manche/manche.service';
+import { PartieGuard } from 'src/common/partie.guard';
 
 @Injectable()
 export class PlayService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly rules: RulesService,
-        private readonly trick: TrickService
+        private readonly trick: TrickService,
+        private readonly mancheService: MancheService,
+        private readonly partieGuard : PartieGuard
     ) { }
     /**
    * UC07 — Jouer une carte
@@ -20,6 +24,7 @@ export class PlayService {
    * - fait avancer le joueur (sauf si pli complet → UC11 prendra le relais)
    */
     async playCard(mancheId: number, joueurId: number, carteId: number) {
+        await this.partieGuard.ensureEnCoursByMancheId(mancheId);
         const result = await this.prisma.$transaction(async (tx) => {
             // 0) Charger état nécessaire
             const manche = await tx.manche.findUnique({
@@ -96,6 +101,8 @@ export class PlayService {
                 where: { joueurId, mancheId, carteId, jouee: false },
                 data: { jouee: true }
             });
+            //Détection Belote
+            const belote = await this.mancheService.markBeloteIfNeeded(mancheId, joueurId, tx)
 
             // 3) Pli complet ?
             const nowPli = await tx.pli.findUnique({
@@ -116,7 +123,8 @@ export class PlayService {
                     pliNumero: nowPli!.numero,
                     cartesDansPli: cartesCount,
                     nextPlayerId,
-                    requiresEndOfTrick: false, // 🆕 (flag lu après le tx)
+                    requiresEndOfTrick: false, // (flag lu après le tx)
+                    appliedBonuses: belote.applied ? ['belote'] : []
                 };
             } else {
                 // Pli complet → on ne clôture pas ici
@@ -125,14 +133,20 @@ export class PlayService {
                     pliNumero: nowPli!.numero,
                     cartesDansPli: cartesCount,
                     nextPlayerId: null,
-                    requiresEndOfTrick: true, // 🆕 (flag lu après le tx)
+                    requiresEndOfTrick: true, // (flag lu après le tx)
+                    appliedBonuses: belote.applied ? ['belote'] : []
                 };
             }
         }, { isolationLevel: 'Serializable' });
 
         // déclenchement automatique UC11 (après le tx)
         if (result.requiresEndOfTrick) {
-            return this.trick.closeCurrentTrick(mancheId);
+            const closed = await this.trick.closeCurrentTrick(mancheId);
+            // Merge minimal pour conserver l’info belote de ce coup
+            return {
+                ...closed,
+                appliedBonuses: result.appliedBonuses ?? [],
+            };
         }
 
         // Sinon on renvoie l’info UC07 classique

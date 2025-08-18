@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PartieGuard } from 'src/common/partie.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ScoreResultDto } from 'src/score/dto/score-result.dto';
 import { ScoreService } from 'src/score/score.service';
 
 @Injectable()
 export class MancheService {
-    constructor(private readonly prisma: PrismaService, private readonly score: ScoreService) { }
+    constructor(private readonly prisma: PrismaService, private readonly score: ScoreService, private readonly partieGuard: PartieGuard) { }
 
     /**
    * Relance explicitement une donne par son ID (doit être la manche courante).
@@ -32,6 +33,7 @@ export class MancheService {
     }
 
     async relancerMancheByMancheId(mancheId: number) {
+        await this.partieGuard.ensureEnCoursByMancheId(mancheId)
         return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             const m = await tx.manche.findUnique({
                 where: { id: mancheId },
@@ -246,6 +248,18 @@ export class MancheService {
                         reason = 'reach_threshold';
                     }
                 }
+                if (shouldEndGame) {
+                    await tx.partie.update({
+                        where: { id: manche.partieId },
+                        data: { statut: 'finie' }
+                    })
+
+                    // (facultatif) refléter l’état dans le lobby pour l’UI
+                    await tx.lobby.updateMany({
+                        where: { partieId: manche.partieId },
+                        data: { statut: 'terminee' }
+                    })
+                }
 
                 // TODO: WebSocket emit('manche:ended', { mancheId, score: scorePayload, totals: {team1:t1, team2:t2}, decision: {...} })
 
@@ -323,10 +337,66 @@ export class MancheService {
                         reason,
                         totals: { team1: t1, team2: t2 },
                     },
-                    nextManche: nextMancheSummary ?? null
+                    nextManche: shouldEndGame ? null : (nextMancheSummary ?? null),
+                    gameOver: shouldEndGame
+                        ? {
+                            partieId: manche.partieId,
+                            winnerTeamNumero,
+                            totals: { team1: t1, team2: t2 },
+                        }
+                        : null,
                 }
             }
             )
         })
     }
+    /**
+ * Détecte la belote "live" : si le joueur vient de compléter le duo Roi&Dame d'ATOUT
+ * alors on marque `manche.beloteJoueurId = joueurId` (idempotent).
+ * Retourne { applied: boolean } pour enrichir la réponse du /play si souhaité.
+ */
+    async markBeloteIfNeeded(mancheId: number, joueurId: number, tx?: Prisma.TransactionClient): Promise<{ applied: boolean }> {
+        const db = tx ?? this.prisma;
+
+        // 1) Charger l'atout + belote existante
+        const manche = await db.manche.findUnique({
+            where: { id: mancheId },
+            select: { couleurAtoutId: true, beloteJoueurId: true }
+        });
+        if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`);
+        const atoutId = manche.couleurAtoutId;
+        if (!atoutId) return { applied: false }; // pas d'atout fixé → pas de belote
+
+        // Déjà marquée ? → idempotent
+        if (manche.beloteJoueurId != null) return { applied: false };
+
+        // 2) A-t-il joué Roi & Dame d'atout (peu importe l'ordre) ?
+        const duo = await db.pliCarte.findMany({
+            where: {
+                joueurId,
+                pli: { mancheId },
+                carte: { couleurId: atoutId, valeur: { in: ['Roi', 'Dame', 'roi', 'dame', 'K', 'Q'] } }
+            },
+            select: { id: true, carte: { select: { valeur: true } } }
+        });
+
+        // normaliser
+        const norm = (v: string) => v.trim().toLowerCase();
+        const vals = duo.map(x => norm(x.carte.valeur));
+
+        // match "roi" ou "k" ; "dame" ou "q"
+        const hasRoi = vals.includes('roi') || vals.includes('k');
+        const hasDame = vals.includes('dame') || vals.includes('q');
+
+        if (hasRoi && hasDame) {
+            await db.manche.update({
+                where: { id: mancheId },
+                data: { beloteJoueurId: joueurId }
+            });
+            return { applied: true };
+        }
+
+        return { applied: false };
+    }
+
 }

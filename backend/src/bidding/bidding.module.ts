@@ -3,10 +3,11 @@ import { BiddingService } from './bidding.service';
 import { BiddingController } from './bidding.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MancheModule } from 'src/manche/manche.module';
+import { PartieGuard } from 'src/common/partie.guard';
 
 @Module({
   imports: [PrismaModule,MancheModule],
   controllers: [BiddingController],
-  providers: [BiddingService],
+  providers: [BiddingService,PartieGuard],
 })
 export class BiddingModule {}

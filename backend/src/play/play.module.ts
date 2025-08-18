@@ -6,9 +6,10 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { PlayQueriesService } from './play.queries';
 import { TrickService } from './trick.service';
 import { MancheModule } from 'src/manche/manche.module';
+import { PartieGuard } from 'src/common/partie.guard';
 
 @Module({
-  providers: [PlayService, RulesService, PlayQueriesService,TrickService],
+  providers: [PlayService, RulesService, PlayQueriesService,TrickService, PartieGuard],
   controllers: [PlayController],
   imports: [PrismaModule,MancheModule],
   exports: [PlayService, RulesService, PlayQueriesService,TrickService]

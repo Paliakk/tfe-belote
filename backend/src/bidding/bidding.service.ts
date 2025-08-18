@@ -3,10 +3,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { BidType, CreateBidDto } from './dto/create-bid.dto';
 import { Prisma } from '@prisma/client';
 import { MancheService } from 'src/manche/manche.service';
+import { PartieGuard } from 'src/common/partie.guard';
 
 @Injectable()
 export class BiddingService {
-    constructor(private readonly prisma: PrismaService, private readonly mancheService: MancheService) { }
+    constructor(private readonly prisma: PrismaService, private readonly mancheService: MancheService, private readonly partieGuard : PartieGuard) { }
 
     // Etat
     async getState(mancheId: number) {
@@ -42,6 +43,7 @@ export class BiddingService {
     }
     // Action
     async placeBid(mancheId: number, dto: CreateBidDto) {
+        await this.partieGuard.ensureEnCoursByMancheId(mancheId);
         const { joueurId, type, couleurAtoutId } = dto
 
         return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
