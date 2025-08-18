@@ -9,6 +9,8 @@ import { BiddingModule } from './bidding/bidding.module';
 import { MancheModule } from './manche/manche.module';
 import { PlayModule } from './play/play.module';
 import { ScoreModule } from './score/score.module';
+import { AuthService } from './auth/auth.service';
+import { AuthModule } from './auth/auth.module';
 /**
  * ============================================================
  *   📌 API Backend Belote TFE — Endpoints (MVP actuel)
@@ -144,8 +146,8 @@ Body: { "joueurId": {{joueurId}} }
  */
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, GameModule, BiddingModule, MancheModule, PlayModule, ScoreModule,],
+  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, GameModule, BiddingModule, MancheModule, PlayModule, ScoreModule, AuthModule,],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, AuthService],
 })
 export class AppModule {}

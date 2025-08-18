@@ -9,7 +9,6 @@ export enum BidType{
 export class CreateBidDto{
     @IsInt()
     @Min(1)
-    joueurId:number
 
     @IsEnum(BidType)
     type: BidType

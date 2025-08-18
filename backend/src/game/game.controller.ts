@@ -1,15 +1,18 @@
-import { Controller, Body, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Controller, Body, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
 import { GameService } from './game.service';
-import { QuitGameDto } from './dto/quit-game.dto';
+import { EnsureJoueurGuard } from 'src/auth/ensure-joueur.guard';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { CurrentJoueurId } from 'src/auth/current-user.decorator';
 
+@UseGuards(JwtAuthGuard, EnsureJoueurGuard)
 @Controller('game')
 export class GameController {
     constructor(private readonly gameService: GameService) { }
     @Post(':id/quit')
     quitGame(
         @Param('id', ParseIntPipe) partieId: number,
-        @Body() dto: QuitGameDto
+        @CurrentJoueurId() joueurId: number,
     ) {
-        return this.gameService.quitGame(partieId, dto.joueurId)
+        return this.gameService.quitGame(partieId, joueurId)
     }
 }

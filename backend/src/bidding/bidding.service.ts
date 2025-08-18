@@ -7,7 +7,7 @@ import { PartieGuard } from 'src/common/partie.guard';
 
 @Injectable()
 export class BiddingService {
-    constructor(private readonly prisma: PrismaService, private readonly mancheService: MancheService, private readonly partieGuard : PartieGuard) { }
+    constructor(private readonly prisma: PrismaService, private readonly mancheService: MancheService, private readonly partieGuard: PartieGuard) { }
 
     // Etat
     async getState(mancheId: number) {
@@ -42,9 +42,9 @@ export class BiddingService {
         }
     }
     // Action
-    async placeBid(mancheId: number, dto: CreateBidDto) {
+    async placeBid(mancheId: number, joueurId: number, dto: CreateBidDto) {
         await this.partieGuard.ensureEnCoursByMancheId(mancheId);
-        const { joueurId, type, couleurAtoutId } = dto
+        const { type, couleurAtoutId } = dto
 
         return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
 
@@ -165,154 +165,155 @@ export class BiddingService {
                     return { message: `Tour 1 terminé sans preneur. Passage au tour 2.` }
                 } else {
                     //Tour 2 terminé sans preneur -> UC14 Relancer donne
-                    const newMancheId = await this.mancheService.relancerMancheByMancheId(manche.id)
+                    const relance = await this.mancheService.relancerMancheByMancheId(manche.id)
                     return {
                         message: `Personne n'a pris au tour 2. Donne relancée (UC14).`,
-                        newMancheId
-                    }
+                        newMancheId:relance.newMancheId,      // service renvoie { newMancheId, numero }
+                        numero: relance.numero
                 }
-            } else {
-                // Continuer dans le même tour
-                await tx.manche.update({
-                    where: { id: mancheId },
-                    data: { joueurActuelId: nextPlayerId }
-                })
-                return { message: `Pass. Joueur suivant: ${nextPlayerId}.` }
             }
+        } else {
+            // Continuer dans le même tour
+            await tx.manche.update({
+                where: { id: mancheId },
+                data: { joueurActuelId: nextPlayerId }
+            })
+                return { message: `Pass. Joueur suivant: ${nextPlayerId}.` }
+        }
         }, { isolationLevel: 'Serializable' })
     }
     // Utils
     private nextPlayerId(seats: { seat: number, joueurId: number }[], currentPlayerId: number) {
-        const cur = seats.find(s => s.joueurId === currentPlayerId)!
-        const nextSeat = (cur.seat + 1) % 4
-        return seats[nextSeat].joueurId
-    }
+    const cur = seats.find(s => s.joueurId === currentPlayerId)!
+    const nextSeat = (cur.seat + 1) % 4
+    return seats[nextSeat].joueurId
+}
     private async completeDistributionAfterTake(tx: Prisma.TransactionClient, manche: any, preneurId: number) {
-        // Récup des infos nécessaire à la distrib finale
-        const m = await tx.manche.findUnique({
-            where: { id: manche.id },
-            include: {
-                partie: { include: { equipes: { include: { joueurs: true } } } }
-            }
-        })
-        if (!m) throw new NotFoundException(`Manche ${manche.id} introuvable.`)
-
-        const seats = m.partie.equipes.flatMap((eq) =>
-            eq.joueurs.map((j) => ({ seat: j.ordreSiege, joueurId: j.joueurId }))
-        ).sort((a, b) => a.seat - b.seat)
-
-        //Comptes actuels (devraient être 5 partout)
-        const counts = Object.fromEntries(await Promise.all(
-            seats.map(async s => {
-                const c = await tx.main.count({ where: { mancheId: m.id, joueurId: s.joueurId } })
-                return [s.joueurId, c]
-            })
-        ))
-        //Reste du paquet après index 21 (0 à 19 distribuées, 20 est retournée)
-        const remaining = m.paquet.slice(21) //11 cartes
-
-        //Donner la carte retournée au preneur
-        const ops: Prisma.PrismaPromise<any>[] = []
-        ops.push(tx.main.create({
-            data: { joueurId: preneurId, mancheId: m.id, carteId: m.carteRetourneeId!, jouee: false },
-        }));
-        counts[preneurId] += 1
-
-
-        /**
-         * Nombre de cartes à donner encore à chacun
-         * preneur : +2 (en plus de la carte retournée)
-         * autre: +3
-         */
-        const needs: Record<number, number> = {}
-        seats.forEach(s => {
-            needs[s.joueurId] = s.joueurId === preneurId ? (8 - counts[s.joueurId]) : (8 - counts[s.joueurId])
-            //Comme counts vaut 6 pour le preneur après la carte retournée, needs = 2; pour les autres counts =5 -> needs = 3
-        })
-
-        //Répartition simple (ordre des seats, on parcourt remaining)
-        let idx = 0
-        for (const s of seats) {
-            const toGive = needs[s.joueurId]
-            for (let k = 0; k < toGive; k++) {
-                const carteId = remaining[idx++]
-                ops.push(tx.main.create({
-                    data: { joueurId: s.joueurId, mancheId: m.id, carteId, jouee: false },
-                }));
-            }
+    // Récup des infos nécessaire à la distrib finale
+    const m = await tx.manche.findUnique({
+        where: { id: manche.id },
+        include: {
+            partie: { include: { equipes: { include: { joueurs: true } } } }
         }
-        await Promise.all(ops)
-    }
-    private async relancerDonne(tx: Prisma.TransactionClient, manche: { id: number }) {
-        // Simplification MVP : on marque la manche comme "échouée", on crée une nouvelle manche avec donneur suivant,
-        // on redistribue 5 cartes + 1 retournée, et on reset l'état d'enchère.
-        // Ici, on applique la même logique que UC14 prévue, en version courte.
+    })
+    if (!m) throw new NotFoundException(`Manche ${manche.id} introuvable.`)
 
-        //Charger partie + sièges
-        const m = await tx.manche.findUnique({
-            where: { id: manche.id },
-            include: {
-                partie: { include: { equipes: { include: { joueurs: true } }, lobby: true } }
-            }
+    const seats = m.partie.equipes.flatMap((eq) =>
+        eq.joueurs.map((j) => ({ seat: j.ordreSiege, joueurId: j.joueurId }))
+    ).sort((a, b) => a.seat - b.seat)
+
+    //Comptes actuels (devraient être 5 partout)
+    const counts = Object.fromEntries(await Promise.all(
+        seats.map(async s => {
+            const c = await tx.main.count({ where: { mancheId: m.id, joueurId: s.joueurId } })
+            return [s.joueurId, c]
         })
-        if (!m) throw new NotFoundException(`Manche ${manche.id} introuvable.`)
+    ))
+    //Reste du paquet après index 21 (0 à 19 distribuées, 20 est retournée)
+    const remaining = m.paquet.slice(21) //11 cartes
 
-        const seats = m.partie.equipes.flatMap((eq) =>
-            eq.joueurs.map((j) => ({ seat: j.ordreSiege, joueurId: j.joueurId }))
-        ).sort((a, b) => a.seat - b.seat)
+    //Donner la carte retournée au preneur
+    const ops: Prisma.PrismaPromise<any>[] = []
+    ops.push(tx.main.create({
+        data: { joueurId: preneurId, mancheId: m.id, carteId: m.carteRetourneeId!, jouee: false },
+    }));
+    counts[preneurId] += 1
 
-        //Donneur suivant
-        const dealerSeat = seats.find(s => s.joueurId === (m.donneurJoueurId as number))!.seat;
-        const nextDealerId = seats[(dealerSeat + 1) % 4].joueurId;
-        const leftOfDealerId = seats[(dealerSeat + 2) % 4].joueurId; // à gauche du nouveau donneur
 
-        // Marquer la manche actuelle comme "échouée" (pas de champ status -> on se contente de la laisser et on repart)
-        // Nouveau paquet
-        const cartes = await tx.carte.findMany();
-        const paquet = [...cartes].sort(() => Math.random() - 0.5);
-        const paquetIds = paquet.map(c => c.id);
-        const carteRetournee = paquet[20];
+    /**
+     * Nombre de cartes à donner encore à chacun
+     * preneur : +2 (en plus de la carte retournée)
+     * autre: +3
+     */
+    const needs: Record<number, number> = {}
+    seats.forEach(s => {
+        needs[s.joueurId] = s.joueurId === preneurId ? (8 - counts[s.joueurId]) : (8 - counts[s.joueurId])
+        //Comme counts vaut 6 pour le preneur après la carte retournée, needs = 2; pour les autres counts =5 -> needs = 3
+    })
 
-        // Créer nouvelle manche
-        const newManche = await tx.manche.create({
-            data: {
-                partieId: m.partieId,
-                numero: m.numero + 1, // incrément simple
-                donneurJoueurId: nextDealerId,
-                carteRetourneeId: carteRetournee.id,
-                tourActuel: 1,
-                joueurActuelId: leftOfDealerId,
-                preneurId: null,
-                paquet: paquetIds,
-            },
-        });
-
-        // Distribuer 5 cartes aux 4 joueurs
-        const mains = seats.flatMap((s) => {
-            const start = s.seat * 5;
-            const five = paquet.slice(start, start + 5);
-            return five.map((carte) => ({
-                joueurId: s.joueurId,
-                mancheId: newManche.id,
-                carteId: carte.id,
-                jouee: false,
+    //Répartition simple (ordre des seats, on parcourt remaining)
+    let idx = 0
+    for (const s of seats) {
+        const toGive = needs[s.joueurId]
+        for (let k = 0; k < toGive; k++) {
+            const carteId = remaining[idx++]
+            ops.push(tx.main.create({
+                data: { joueurId: s.joueurId, mancheId: m.id, carteId, jouee: false },
             }));
-        });
-        await tx.main.createMany({ data: mains });
+        }
+    }
+    await Promise.all(ops)
+}
+    private async relancerDonne(tx: Prisma.TransactionClient, manche: { id: number }) {
+    // Simplification MVP : on marque la manche comme "échouée", on crée une nouvelle manche avec donneur suivant,
+    // on redistribue 5 cartes + 1 retournée, et on reset l'état d'enchère.
+    // Ici, on applique la même logique que UC14 prévue, en version courte.
 
-        //notifier via webSocket plus tard
-    }
+    //Charger partie + sièges
+    const m = await tx.manche.findUnique({
+        where: { id: manche.id },
+        include: {
+            partie: { include: { equipes: { include: { joueurs: true } }, lobby: true } }
+        }
+    })
+    if (!m) throw new NotFoundException(`Manche ${manche.id} introuvable.`)
+
+    const seats = m.partie.equipes.flatMap((eq) =>
+        eq.joueurs.map((j) => ({ seat: j.ordreSiege, joueurId: j.joueurId }))
+    ).sort((a, b) => a.seat - b.seat)
+
+    //Donneur suivant
+    const dealerSeat = seats.find(s => s.joueurId === (m.donneurJoueurId as number))!.seat;
+    const nextDealerId = seats[(dealerSeat + 1) % 4].joueurId;
+    const leftOfDealerId = seats[(dealerSeat + 2) % 4].joueurId; // à gauche du nouveau donneur
+
+    // Marquer la manche actuelle comme "échouée" (pas de champ status -> on se contente de la laisser et on repart)
+    // Nouveau paquet
+    const cartes = await tx.carte.findMany();
+    const paquet = [...cartes].sort(() => Math.random() - 0.5);
+    const paquetIds = paquet.map(c => c.id);
+    const carteRetournee = paquet[20];
+
+    // Créer nouvelle manche
+    const newManche = await tx.manche.create({
+        data: {
+            partieId: m.partieId,
+            numero: m.numero + 1, // incrément simple
+            donneurJoueurId: nextDealerId,
+            carteRetourneeId: carteRetournee.id,
+            tourActuel: 1,
+            joueurActuelId: leftOfDealerId,
+            preneurId: null,
+            paquet: paquetIds,
+        },
+    });
+
+    // Distribuer 5 cartes aux 4 joueurs
+    const mains = seats.flatMap((s) => {
+        const start = s.seat * 5;
+        const five = paquet.slice(start, start + 5);
+        return five.map((carte) => ({
+            joueurId: s.joueurId,
+            mancheId: newManche.id,
+            carteId: carte.id,
+            jouee: false,
+        }));
+    });
+    await tx.main.createMany({ data: mains });
+
+    //notifier via webSocket plus tard
+}
     async getActiveMancheIdByPartie(partieId: number) {
-        const m = await this.prisma.manche.findFirst({
-            where: { partieId },
-            orderBy: [
-                { numero: 'desc' },
-                { createdAt: 'desc' },
-                { id: 'desc' }
-            ],
-            select: { id: true, numero: true }
-        })
-        if (!m) throw new NotFoundException(`Aucune manche pour la partie ${partieId}`)
-        return m
-    }
+    const m = await this.prisma.manche.findFirst({
+        where: { partieId },
+        orderBy: [
+            { numero: 'desc' },
+            { createdAt: 'desc' },
+            { id: 'desc' }
+        ],
+        select: { id: true, numero: true }
+    })
+    if (!m) throw new NotFoundException(`Aucune manche pour la partie ${partieId}`)
+    return m
+}
 }

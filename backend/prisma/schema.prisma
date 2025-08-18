@@ -19,10 +19,15 @@ model Joueur {
   id                Int      @id @default(autoincrement())
   username          String   @unique
   email             String   @unique
-  passwordHash      String
+  passwordHash      String?
   estConnecte       Boolean  @default(false)
   derniereConnexion DateTime @default(now())
   connectionId      String?
+
+  // --- Auth0
+  auth0Sub    String? @unique
+  displayName String?
+  avatarUrl   String?
 
   mains             Main[]
   encheres          Enchere[]

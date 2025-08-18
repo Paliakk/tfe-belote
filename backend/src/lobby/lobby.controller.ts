@@ -1,25 +1,23 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { LobbyService } from './lobby.service';
 import { CreateLobbyDto } from './dto/creat-lobby.dto';
 import { create } from 'domain';
 import { JoinLobbyDto } from './dto/join-lobby.dto';
-import { LeaveLobbyDto } from './dto/leave-lobby.dto';
 import { StartGameDto } from './dto/start-game.dto';
+import { EnsureJoueurGuard } from 'src/auth/ensure-joueur.guard';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard, EnsureJoueurGuard)
 @Controller('lobby')
 export class LobbyController {
     constructor(private readonly lobbyService: LobbyService) { }
 
-    /**
-     * Crée un nouveau lobby
-     * Pour l'instant, l'Id du créateur est simulé (1)
-     * Plus tard, il sera extrait du token Auth0
-     */
+    /** Créer un lobby — le createurId vient du token */
     @Post()
     @UsePipes(new ValidationPipe({ whitelist: true }))
-    async createLobby(@Body() dto: CreateLobbyDto) {
-        const fakeCreateurId = 1; // --> Faudra remplacer ceci
-        const lobby = await this.lobbyService.create(dto, fakeCreateurId)
+    async createLobby(@Body() dto: CreateLobbyDto, @Req() req: any) {
+        const createurId = req.user.joueurId as number
+        const lobby = await this.lobbyService.create(dto, createurId)
 
         // mdp non renvoyé même si présent
         return {
@@ -30,7 +28,6 @@ export class LobbyController {
             createurId: lobby.createurId,
             createdAt: lobby.createdAt,
             partieId: lobby.partieId ?? null,
-            //Le createur peut être rajouté plus tard
         }
     }
     @Get(':id')
@@ -62,8 +59,9 @@ export class LobbyController {
     //UC04 - rejoindre un lobby
     @Post('join')
     @UsePipes(new ValidationPipe({ whitelist: true }))
-    async joinLobby(@Body() dto: JoinLobbyDto) {
-        return this.lobbyService.join(dto);
+    async joinLobby(@Body() dto: JoinLobbyDto, @Req() req: any) {
+        const joueurId = req.user.joueurId as number
+        return this.lobbyService.join(dto, joueurId);
     }
     //Liste des membres (pour le frontend)
     @Get(':id/members')
@@ -74,17 +72,21 @@ export class LobbyController {
     @Post(':id/leave')
     async leave(
         @Param('id', ParseIntPipe) lobbyId: number,
-        @Body() dto: LeaveLobbyDto
+        @Req() req: any
     ) {
-        return this.lobbyService.leave(lobbyId, dto.joueurId)
+        const joueurId = req.user.joueurId as number
+        return this.lobbyService.leave(lobbyId, joueurId)
     }
 
     //Lancement d'une partie
     @Post(':id/start')
+    @UsePipes(new ValidationPipe({ whitelist: true }))
     startGame(
         @Param('id', ParseIntPipe) lobbyId: number,
-        @Body() dto: StartGameDto
+        @Body() dto: StartGameDto,
+        @Req() req: any
     ) {
-        return this.lobbyService.startGame(lobbyId, dto)
+        const createurId = req.user.joueurId as number
+        return this.lobbyService.startGame(lobbyId,createurId, dto.scoreMax)
     }
 }

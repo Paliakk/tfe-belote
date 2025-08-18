@@ -9,10 +9,6 @@ export class JoinLobbyDto {
     @Min(1)
     lobbyId: number
 
-    @IsInt({ message: 'joueurId doit être un entier.' })
-    @Min(1)
-    joueurId: number
-
     @IsOptional()
     @IsString({ message: 'password doit être une chaîne si fourni.' })
     password?: string

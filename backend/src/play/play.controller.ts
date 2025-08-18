@@ -1,9 +1,13 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { PlayService } from './play.service';
 import { RulesService } from './rules.service';
 import { PlayQueriesService } from './play.queries';
 import { TrickService } from './trick.service';
+import { EnsureJoueurGuard } from 'src/auth/ensure-joueur.guard';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { CurrentJoueurId } from 'src/auth/current-user.decorator';
 
+@UseGuards(JwtAuthGuard, EnsureJoueurGuard)
 @Controller('play')
 export class PlayController {
     constructor(
@@ -12,13 +16,16 @@ export class PlayController {
         private readonly queries: PlayQueriesService,
         private readonly trick: TrickService
     ) { }
+
     /** UC07 — jouer une carte */
     @Post(':mancheId/play')
     async playCard(
         @Param('mancheId', ParseIntPipe) mancheId: number,
-        @Body() body: { joueurId: number; carteId: number }
+        @CurrentJoueurId() joueurId: number,
+        @Body() body: { carteId: number },
+        
     ) {
-        const { joueurId, carteId } = body;
+        const { carteId } = body
         return this.play.playCard(mancheId, joueurId, carteId)
     }
 
@@ -26,7 +33,7 @@ export class PlayController {
     @Get(':mancheId/playable')
     async playable(
         @Param('mancheId', ParseIntPipe) mancheId: number,
-        @Query('joueurId', ParseIntPipe) joueurId: number,
+        @CurrentJoueurId() joueurId: number,
     ) {
         return this.queries.getPlayable(mancheId, joueurId)
     }
@@ -35,7 +42,7 @@ export class PlayController {
     @Get(':mancheId/hand')
     async hand(
         @Param('mancheId', ParseIntPipe) mancheId: number,
-        @Query('joueurId', ParseIntPipe) joueurId: number
+        @CurrentJoueurId() joueurId: number
     ) {
         return this.queries.getHand(mancheId, joueurId)
     }
