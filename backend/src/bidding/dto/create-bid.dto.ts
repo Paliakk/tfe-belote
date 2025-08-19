@@ -7,8 +7,6 @@ export enum BidType{
 }
 
 export class CreateBidDto{
-    @IsInt()
-    @Min(1)
 
     @IsEnum(BidType)
     type: BidType

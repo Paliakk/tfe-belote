@@ -4,10 +4,12 @@ import { CreateLobbyDto } from './dto/creat-lobby.dto';
 import { JoinLobbyDto } from './dto/join-lobby.dto';
 import { StartGameDto } from './dto/start-game.dto';
 import { Prisma } from '@prisma/client';
+import { RealtimeService } from 'src/realtime/realtime.service';
+import { GameEvent, PartieCommenceePayload } from 'src/play/game-events';
 
 @Injectable()
 export class LobbyService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService, private readonly rt: RealtimeService) { }
 
     /** Créer un lobby et y ajouter le créateur comme membre */
     async create(dto: CreateLobbyDto, createurId: number) {
@@ -37,7 +39,13 @@ export class LobbyService {
             await tx.lobbyJoueur.create({ data: { lobbyId: lobby.id, joueurId: createurId } });
             return lobby;
         });
-
+        this.rt.emitToLobby(lobbyCree.id, 'lobby:created', {
+            lobbyId: lobbyCree.id,
+            nom: lobbyCree.nom,
+            estPrive: Boolean(lobbyCree.password),
+            createurId,
+            createdAt: lobbyCree.createdAt,
+        });
         return lobbyCree;
     }
 
@@ -101,7 +109,13 @@ export class LobbyService {
                     createur: { select: { id: true, username: true } },
                     membres: { include: { joueur: { select: { id: true, username: true } } } }
                 }
-            });
+            })
+
+            this.rt.emitToLobby(dto.lobbyId, 'lobby:memberJoined', {
+                lobbyId: dto.lobbyId,
+                joueur: { id: joueurId /* + username si tu l’as */ },
+                at: new Date().toISOString(),
+            })
 
             return {
                 id: updated!.id,
@@ -151,6 +165,11 @@ export class LobbyService {
                 await tx.lobby.delete({ where: { id: lobbyId } });
                 return { message: `Lobby ${lobbyId} supprimé (dernier joueur parti).` };
             }
+            this.rt.emitToLobby(lobbyId, 'lobby:memberLeft', {
+                lobbyId,
+                joueurId,
+                at: new Date().toISOString(),
+            });
             return { message: `Joueur ${joueurId} a quitté le lobby ${lobbyId}.` };
         });
     }
@@ -244,7 +263,18 @@ export class LobbyService {
                 where: { id: lobbyId },
                 data: { statut: 'en_cours', partieId: partie.id }
             });
-
+            this.rt.emitToLobby(lobbyId, 'lobby:gameStarted', {
+                lobbyId,
+                partieId: partie.id,
+                mancheId: manche.id, // si dispo
+                scoreMax: partie.scoreMax,
+                at: new Date().toISOString(),
+            });
+            this.rt.emitToLobby(lobbyId, GameEvent.PartieCommencee, {
+                partieId: partie.id,
+                mancheId: manche.id,
+                at: new Date().toISOString(),
+            } satisfies PartieCommenceePayload)
             return {
                 message: `Partie ${partie.id} lancée depuis le lobby ${lobbyId}`,
                 partie: { id: partie.id, scoreMax: partie.scoreMax, statut: partie.statut },

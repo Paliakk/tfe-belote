@@ -3,6 +3,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RulesService } from './rules.service';
 import { MancheService } from 'src/manche/manche.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
+import { CarteJoueePayload, FinDePartiePayload, GameEvent, MancheTermineePayload, NouvelleManchePayload, PliTerminePayload, ScoreMisAJourPayload } from './game-events';
 
 type TrickCard = { ordre: number; joueurId: number; carte: { id: number; valeur: string; couleurId: number } }
 
@@ -11,7 +13,8 @@ export class TrickService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly rules: RulesService,
-        private readonly mancheService: MancheService
+        private readonly mancheService: MancheService,
+        private readonly rt: RealtimeService
     ) { }
 
     /**
@@ -51,6 +54,7 @@ export class TrickService {
                 }
             })
             if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`)
+            const partieId = manche.partie.id;
 
             const plis = [...(manche.plis || [])].sort((a, b) => a.numero - b.numero)
             if (plis.length === 0) throw new BadRequestException(`Aucun pli en cours pour cette manche.`)
@@ -110,20 +114,84 @@ export class TrickService {
                 nextLeads: winnerId,
                 createdNextTrick,
                 requiresEndOfHand,
+                partieId
             }
         }, { isolationLevel: 'Serializable' });
+
+        this.rt.emitToPartie(result.partieId, GameEvent.PliTermine, {
+            mancheId,
+            pliId: result.pliId,
+            pliNumero: result.numero,
+            numero: result.numero,
+            winnerId: result.winnerId,
+            winnerTeam: result.winnerTeam,
+            trickPoints: result.trickPoints,
+            totals: result.totals,
+            nextLeads: result.nextLeads,
+            requiresEndOfHand: result.requiresEndOfHand,
+            at: new Date().toISOString(),
+        } satisfies PliTerminePayload);
 
         // 2) Hors transaction : si 8e pli, on enchaîne automatiquement UC12 (Fin de manche)
         if (result.requiresEndOfHand) {
             try {
-                const end = await this.mancheService.endOfHand(mancheId); // UC12 (appelle UC09 en interne)
-                // NOTE: plus tard, on pourra émettre un WS ici (manche:ended) avec `end`
+                const end = await this.mancheService.endOfHand(mancheId);
+
+                this.rt.emitToPartie(result.partieId, GameEvent.MancheTerminee, {
+                    partieId: result.partieId,
+                    mancheId,
+                    recap: end ?? null,
+                    at: new Date().toISOString(),
+                } satisfies MancheTermineePayload);
+                console.log('[WS] mancheTerminee émis', { partieId: result.partieId, mancheId });
+
+                const { team1, team2, scoreMax } = await this.getCumulativeScores(result.partieId);
+
+                // 🧮 Score mis à jour (scoreMisAJour)
+                this.rt.emitToPartie(result.partieId, GameEvent.ScoreMisAJour, {
+                    partieId: result.partieId,
+                    scores: { team1, team2 },
+                    scoreMax,
+                    at: new Date().toISOString(),
+                } satisfies ScoreMisAJourPayload);
+                console.log('[WS] scoreMisAJour émis', { team1, team2, scoreMax });
+
+                const freshPartie = await this.prisma.partie.findUnique({
+                    where: { id: result.partieId },
+                    select: { statut: true, mancheCouranteId: true, scoreMax: true }, // prends aussi scoreMax si besoin
+                });
+
+                // ♻️ Nouvelle manche (si ID a changé)
+                if (freshPartie?.statut === 'en_cours'
+                    && freshPartie.mancheCouranteId
+                    && freshPartie.mancheCouranteId !== mancheId) {
+                    this.rt.emitToPartie(result.partieId, GameEvent.NouvelleManche, {
+                        partieId: result.partieId,
+                        nouvelleMancheId: freshPartie.mancheCouranteId,
+                        at: new Date().toISOString(),
+                    } satisfies NouvelleManchePayload);
+                    console.log('[WS] nouvelleManche émis', { nouvelleMancheId: freshPartie.mancheCouranteId });
+                }
+
+                // 🏁 Fin de partie
+                if (freshPartie?.statut === 'finie') {
+                    const winnerTeam = team1 >= team2 ? 1 : 2;
+                    this.rt.emitToPartie(result.partieId, GameEvent.FinDePartie, {
+                        partieId: result.partieId,
+                        winnerTeam,
+                        finalScores: { team1, team2 },
+                        at: new Date().toISOString(),
+                    } satisfies FinDePartiePayload);
+                    console.log('[WS] finDePartie émis', { winnerTeam, team1, team2 });
+                }
+
                 return { ...result, endOfHand: end };
             } catch (e) {
-                // On renvoie quand même l’info pli + l’erreur UC12 pour debug frontend
+                console.error('[END_OF_HAND][ERROR]', e);
                 return { ...result, endOfHandError: (e as Error).message ?? 'endOfHand failed' };
             }
         }
+
 
         // 3) Sinon, on renvoie le payload standard de fin de pli
         return result;
@@ -218,5 +286,24 @@ export class TrickService {
         if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`);
         const { team1, team2 } = await this.computeLiveScores(this.prisma, mancheId, manche.couleurAtoutId ?? null, -1);
         return { mancheId, team1, team2 };
+    }
+
+    private async getCumulativeScores(partieId: number) {
+        const partie = await this.prisma.partie.findUnique({
+            where: { id: partieId },
+            include: { equipes: { select: { id: true, numero: true } } },
+        });
+        const rows = await this.prisma.scoreManche.findMany({
+            where: { manche: { partieId } },
+            select: { equipeId: true, points: true },
+        });
+        const byId = new Map<number, number>();
+        for (const r of rows) byId.set(r.equipeId, (byId.get(r.equipeId) || 0) + r.points);
+        let team1 = 0, team2 = 0;
+        for (const eq of partie!.equipes) {
+            const s = byId.get(eq.id) || 0;
+            if (eq.numero === 1) team1 += s; else if (eq.numero === 2) team2 += s;
+        }
+        return { team1, team2, scoreMax: partie!.scoreMax };
     }
 }

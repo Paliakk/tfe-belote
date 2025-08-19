@@ -13,7 +13,7 @@ export class PlayService {
         private readonly rules: RulesService,
         private readonly trick: TrickService,
         private readonly mancheService: MancheService,
-        private readonly partieGuard : PartieGuard
+        private readonly partieGuard: PartieGuard
     ) { }
     /**
    * UC07 — Jouer une carte
@@ -170,5 +170,37 @@ export class PlayService {
         const idx = seats.findIndex(s => s.joueurId === currentId);
         const next = seats[(idx + 1) % 4]
         return next.joueurId
+    }
+    async getEtatManche(mancheId: number) {
+        const manche = await this.prisma.manche.findUnique({
+            where: { id: mancheId },
+            include: {
+                partie: { select: { id: true } },
+                plis: {
+                    orderBy: { numero: 'desc' },
+                    take: 1,
+                    include: { cartes: { orderBy: { ordre: 'asc' }, include: { carte: true } } },
+                },
+            },
+        });
+        if (!manche) throw new NotFoundException('Manche introuvable');
+
+        const pli = manche.plis[0];
+        return {
+            mancheId: manche.id,
+            partieId: manche.partie.id,
+            joueurActuelId: manche.joueurActuelId,
+            pliActuel: pli
+                ? {
+                    id: pli.id,
+                    numero: pli.numero,
+                    cartes: pli.cartes.map(pc => ({
+                        joueurId: pc.joueurId,
+                        carte: { id: pc.carteId, valeur: pc.carte.valeur, couleurId: pc.carte.couleurId },
+                        ordre: pc.ordre,
+                    })),
+                }
+                : { id: null, numero: 1, cartes: [] },
+        };
     }
 }
