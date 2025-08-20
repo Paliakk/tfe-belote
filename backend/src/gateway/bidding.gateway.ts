@@ -14,6 +14,7 @@ import { GameEvent, BiddingPlacedPayload, BiddingStatePayload } from 'src/realti
 import { BiddingService } from 'src/bidding/bidding.service';
 import { BidType } from 'src/bidding/dto/create-bid.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PlayQueriesService } from 'src/play/play.queries';
 
 @WebSocketGateway({ cors: true })
 @UseGuards(AuthGuardSocket)
@@ -25,6 +26,7 @@ export class BiddingGateway implements OnGatewayInit {
     private readonly rt: RealtimeService,
     private readonly biddingService: BiddingService,
     private readonly prisma: PrismaService,
+    private readonly playQueries: PlayQueriesService
   ) { }
 
   afterInit(server: Server) {
@@ -120,9 +122,41 @@ export class BiddingGateway implements OnGatewayInit {
     // 👉 Cas 1: prise (TAKE_CARD / CHOOSE_COLOR) -> redistrib finale: mains à jour pour chacun
     if (res.message?.startsWith('Preneur fixé')) {
       await this.rt.emitHandsForPartie(this.prisma, partieId, data.mancheId);
-      // Option: signaler fin d’enchère pour l’UI
+
+      // 1) Déterminer qui commence le 1er pli
+      // Si tu as déjà la logique quelque part, utilise-la. Sinon, prends ce que ta DB indique.
+      let firstToPlayId = (await this.prisma.manche.findUnique({
+        where: { id: data.mancheId },
+        select: { joueurActuelId: true },
+      }))?.joueurActuelId;
+
+      // Si non défini, appelle ta logique métier (à adapter à tes règles)
+      // ex: firstToPlayId = await this.playService.getFirstPlayerId(data.mancheId);
+      if (!firstToPlayId) {
+        // Fallback ultra simple: rester sur joueurActuelId déjà décidé par ton service d'enchères
+        firstToPlayId = updated.joueurActuelId;
+        // Et on peut persister si nécessaire:
+        await this.prisma.manche.update({
+          where: { id: data.mancheId },
+          data: { joueurActuelId: firstToPlayId },
+        });
+      }
+
+      // 2) Diffuser à toute la table qui doit jouer
+      this.rt.emitToPartie(partieId, 'turn:state', {
+        mancheId: data.mancheId,
+        joueurActuelId: firstToPlayId,
+      });
+
+      // 3) Envoyer les cartes jouables AU SEUL joueur actif
+      const playable = await this.playQueries.getPlayable(data.mancheId, firstToPlayId);
+      // Normalise si besoin: le front accepte {carteIds}/playable/cartes[…]
+      this.rt.emitToJoueur(firstToPlayId, 'play:playable', playable);
+
+      // 4) Signal fin enchères pour l’UI (tu l’avais déjà)
       this.rt.emitToPartie(partieId, 'bidding:ended', {
-        mancheId: data.mancheId, preneurId: joueurId,
+        mancheId: data.mancheId,
+        preneurId: joueurId,
         atoutId: (data.type === 'take_card') ? updated.carteRetournee?.couleurId : data.couleurAtoutId
       });
       return;

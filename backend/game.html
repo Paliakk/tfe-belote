@@ -121,6 +121,17 @@
       position: relative;
       cursor: default;
     }
+    .card.hoverable:hover {
+      transform: scale(1.08) translateY(-6px);
+      box-shadow: 0 6px 18px rgba(0,0,0,35);
+      cursor: pointer;
+    }
+    .card.disabled{
+      opacity: .45;
+      filter: grayscale(70%);
+      cursor: not-allowed;
+      pointer-events: none;
+    }
 
     .card .rank {
       position: absolute;
@@ -178,8 +189,6 @@
   <h1>Belote – Table <span id="partie-pill" class="pill"></span> <span id="manche-pill" class="pill"></span></h1>
 
   <div class="row btns">
-    <button id="btn-connect">🔐 Se connecter & Rejoindre</button>
-    <button id="btn-get-state">📥 État enchères</button>
     <button id="btn-pass">🙅 Pass</button>
     <button id="btn-take">🃏 Prendre (carte retournée)</button>
     <button id="btn-choose">🎨 Choisir couleur…</button>
@@ -207,6 +216,7 @@
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="./game.js"></script>
+
 </body>
 
 </html>
