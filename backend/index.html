@@ -73,11 +73,6 @@
         const listEl = () => document.getElementById('membres-list');
         const FRONTEND_ORIGIN = window.location.origin;
 
-        socket.on('partie:started', ({ partieId, mancheId }) => {
-            const url = `${FRONTEND_ORIGIN}/game.html?partieId=${encodeURIComponent(partieId)}`
-                + (mancheId ? `&mancheId=${encodeURIComponent(mancheId)}` : '');
-            window.location.assign(url);
-        });
         function log(msg) {
             logEl().textContent += msg + '\n';
             console.log(msg);
@@ -94,51 +89,60 @@
             });
         }
 
-        function connect() {
-            const token = prompt('Entrez votre token Auth0 :');
-            if (!token) return log('❌ Aucun token fourni.');
-            localStorage.setItem('auth_token', token);
-
-            socket = io('http://localhost:3000', { auth: { token } });
-
+        function attachSocketHandlers() {
+            // ✔︎ Tous les handlers sont attachés après création du socket
             socket.on('connect', () => log('✅ Connecté au serveur WS'));
             socket.on('connect_error', err => log('❌ Erreur connexion : ' + err.message));
 
-            // on stocke l’ID du lobby dès qu’on le reçoit
             socket.on('lobby:joined', ({ lobbyId }) => {
                 currentLobbyId = lobbyId;
                 log(`🎉 Lobby rejoint avec ID: ${currentLobbyId}`);
             });
 
-            // ——— Rendu piloté par l’état ———
             socket.on('lobby:state', ({ lobbyId, membres }) => {
                 currentLobbyId = currentLobbyId ?? lobbyId;
                 log(`📦 State lobby ${lobbyId} — ${membres.length} membre(s)`);
                 renderMembers(membres);
             });
 
-            // En bonus: petit event court pour les logs UX
             socket.on('lobby:update', ({ lobbyId, type, joueur }) => {
                 log(`📢 ${type === 'join' ? '➕' : '➖'} ${joueur} (${type}) dans lobby ${lobbyId}`);
             });
 
             socket.on('lobby:closed', ({ lobbyId }) => {
                 log(`🚪 Lobby ${lobbyId} fermé/supprimé`);
-                renderMembers([]); // clean
+                renderMembers([]);
                 currentLobbyId = null;
             });
 
-            // ——— Redirection quand la partie démarre ———
-            socket.on('lobby:gameStarted', ({ partieId }) => {
-                // construit une URL relative au fichier courant (respecte /backend/)
+            // Redirections jeu (avec token par onglet)
+            const goToGame = ({ partieId, mancheId }) => {
                 const url = new URL('game.html', window.location.href);
                 url.searchParams.set('partieId', String(partieId));
+                if (mancheId) url.searchParams.set('mancheId', String(mancheId));
+                const t = sessionStorage.getItem('auth_token');
+                if (t) url.searchParams.set('token', t);
                 window.location.assign(url.toString());
-            });
+            };
+
+            socket.on('lobby:gameStarted', ({ partieId }) => goToGame({ partieId }));
+            socket.on('partie:started', ({ partieId, mancheId }) => goToGame({ partieId, mancheId }));
+        }
+
+        // ——— Connexion ———
+        function connect() {
+            const token = sessionStorage.getItem('auth_token') || prompt('Entrez votre token Auth0 :');
+            if (!token) { log('❌ Aucun token fourni.'); return; }
+            sessionStorage.setItem('auth_token', token); // token par onglet
+
+            // Crée le socket puis attache les handlers
+            socket = io('http://localhost:3000', { auth: { token } });
+            attachSocketHandlers();
         }
 
         // ——— Boutons ———
         function createLobby() {
+            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
             const nom = prompt('Nom du lobby à créer ?') || 'Lobby Test';
             socket.emit('lobby:create', { nom }, (res) => {
                 if (res?.lobbyId) {
@@ -150,18 +154,21 @@
         }
 
         function joinLobbyByName() {
+            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
             const nom = prompt('Nom du lobby ?') || 'test';
             socket.emit('lobby:joinByName', { nom });
             log('🔹 Emit lobby:joinByName');
         }
 
         function leaveLobby() {
+            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
             if (!currentLobbyId) return log('⚠️ Aucun lobby en cours.');
             socket.emit('lobby:leaveRoom', { lobbyId: currentLobbyId });
             log('🔹 Emit lobby:leaveRoom');
         }
 
         function chat() {
+            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
             if (!currentLobbyId) return log('⚠️ Aucun lobby');
             const message = prompt('Message à envoyer :');
             if (!message) return;
@@ -170,24 +177,29 @@
         }
 
         function startGame() {
-            if (!socket || !socket.connected) {
-                log('⚠️ Non connecté au WS');
-                return;
-            }
-
-            // Utilise l’ID courant si on l’a, sinon demande-le à l’utilisateur
+            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
             const id = currentLobbyId ?? parseInt(prompt('ID du lobby ?'), 10);
-            if (!id) {
-                log('❌ Aucun lobbyId fourni.');
-                return;
-            }
-
+            if (!id) return log('❌ Aucun lobbyId fourni.');
             const scoreMax = parseInt(prompt('Score max (ex: 301) ?', '301'), 10) || 301;
-
             socket.emit('lobby:startGame', { lobbyId: id, scoreMax });
             log(`🔹 Emit lobby:startGame { lobbyId: ${id}, scoreMax: ${scoreMax} }`);
         }
+
+        // Expose les fonctions aux boutons
+        window.connect = connect;
+        window.createLobby = createLobby;
+        window.joinLobbyByName = joinLobbyByName;
+        window.leaveLobby = leaveLobby;
+        window.chat = chat;
+        window.clearLogs = clearLogs;
+        window.startGame = startGame;
+
+        // Auto-connect si un token est déjà présent pour cet onglet
+        if (sessionStorage.getItem('auth_token')) {
+            try { connect(); } catch (e) { console.error(e); }
+        }
     </script>
+
 </body>
 
 </html>

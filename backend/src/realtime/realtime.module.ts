@@ -3,6 +3,7 @@ import { RealtimeService } from './realtime.service';
 
 @Global()   //Comme ça il ne faut pas importer le module à chaque fois
 @Module({
-  providers: [RealtimeService]
+  providers: [RealtimeService],
+  exports:[RealtimeService]
 })
 export class RealtimeModule {}

@@ -3,23 +3,31 @@
 
 <head>
   <base href="./">
-  <meta http-equiv="Content-Security-Policy" content="
-  default-src 'self';
-  connect-src http://localhost:3000 ws://localhost:3000;
-  script-src 'self' https://cdn.socket.io;
-  style-src 'self' 'unsafe-inline';
-  img-src 'self' data:
-">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
-  <link rel="shortcut icon" href="data:,">
-
   <meta charset="UTF-8" />
   <title>Belote – Table</title>
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    connect-src http://localhost:3000 ws://localhost:3000;
+    script-src 'self' https://cdn.socket.io;
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data:;
+  ">
+  <link rel="icon" href="data:,">
   <style>
+    :root {
+      --card-w: 70px;
+      --card-h: 100px;
+    }
+
     body {
       font-family: system-ui, sans-serif;
-      padding: 16px;
-      background: #f7f7f9;
+      padding: 14px;
+      background: #0a7b45;
+      color: #111;
+    }
+
+    h1 {
+      color: #fff;
     }
 
     .row {
@@ -30,148 +38,175 @@
       margin: 4px 8px 4px 0;
     }
 
-    #log {
-      background: #111;
-      color: #9f9;
-      padding: 10px;
-      min-height: 220px;
-      white-space: pre-wrap;
-      font-family: monospace;
+    #table {
+      position: relative;
+      margin: 12px auto 16px;
+      width: 820px;
+      height: 520px;
+      background: radial-gradient(ellipse at center, #0aa255 0%, #08693b 65%, #065a33 100%);
+      border-radius: 24px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .35), inset 0 0 0 6px #0d5533cc;
+    }
+
+    .seat {
+      position: absolute;
+      width: 200px;
+      height: 120px;
+      color: #fff;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .seat.me {
+      outline: 2px dashed #fff4;
+      border-radius: 12px;
     }
 
     .pill {
       display: inline-block;
       padding: 2px 8px;
       border-radius: 999px;
-      background: #eee;
+      background: #fff;
+      color: #333;
       margin-left: 6px;
+    }
+
+    #center {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px;
+      height: 200px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #returned {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #trick {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #my-hand {
+      margin: 10px auto;
+      width: 820px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .card {
+      width: var(--card-w);
+      height: var(--card-h);
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: default;
+    }
+
+    .card .rank {
+      position: absolute;
+      left: 6px;
+      top: 4px;
+      font: 600 14px system-ui;
+    }
+
+    .card .suit {
+      font-size: 26px;
+    }
+
+    .card.red {
+      color: #c02020;
+    }
+
+    .card.black {
+      color: #222;
+    }
+
+    .card.sel {
+      outline: 2px solid #3aa3ff;
+    }
+
+    .mini {
+      transform: scale(.85);
+      opacity: .95
+    }
+
+    #log {
+      background: #111;
+      color: #9f9;
+      padding: 10px;
+      min-height: 200px;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+
+    .muted {
+      opacity: .7
+    }
+
+    .btns {
+      margin: 6px 0
+    }
+
+    .btns button[disabled] {
+      opacity: .4;
+      cursor: not-allowed
     }
   </style>
 </head>
 
 <body>
-  <h1>Belote – Table <span id="partie-pill" class="pill"></span></h1>
+  <h1>Belote – Table <span id="partie-pill" class="pill"></span> <span id="manche-pill" class="pill"></span></h1>
 
-  <div class="row">
-    <button id="btn-connect">🔐 Se connecter & Rejoindre la partie</button>
-  </div>
-
-  <div class="row">
-    <button id="btn-get-state">📥 Get bidding state</button>
+  <div class="row btns">
+    <button id="btn-connect">🔐 Se connecter & Rejoindre</button>
+    <button id="btn-get-state">📥 État enchères</button>
     <button id="btn-pass">🙅 Pass</button>
-    <button id="btn-take">🃏 Take card</button>
-    <button id="btn-choose">🎨 Choose color (♥=1)</button>
+    <button id="btn-take">🃏 Prendre (carte retournée)</button>
+    <button id="btn-choose">🎨 Choisir couleur…</button>
   </div>
 
-  <h2>Logs</h2>
+  <div id="table">
+    <!-- 4 sièges -->
+    <div id="seat-top" class="seat" style="left:310px; top:10px"></div>
+    <div id="seat-right" class="seat" style="right:10px; top:200px"></div>
+    <div id="seat-bottom" class="seat me" style="left:310px; bottom:10px"></div>
+    <div id="seat-left" class="seat" style="left:10px; top:200px"></div>
+
+    <!-- centre : carte retournée + tapis pli courant -->
+    <div id="center">
+      <div id="returned"></div>
+      <div id="trick"></div>
+    </div>
+  </div>
+
+  <h3 style="color:#fff">Ma main</h3>
+  <div id="my-hand"></div>
+
+  <h2 style="color:#fff">Logs</h2>
   <pre id="log"></pre>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script>
-    // ---------- helpers ----------
-    function q(sel) { return document.querySelector(sel); }
-    function log(...args) { const el = q('#log'); el.textContent += args.map(a => typeof a === 'string' ? a : JSON.stringify(a, null, 2)).join(' ') + '\n'; console.log(...args); }
-    function getQuery(name) { return new URLSearchParams(location.search).get(name); }
-
-    // ---------- état client ----------
-    let socket;
-    let partieId = Number(getQuery('partieId')) || null;
-    let mancheId = Number(getQuery('mancheId')) || null; // optionnel, sera mis à jour après joinedPartie
-
-    // affiche l’ID en haut
-    function refreshPill() {
-      q('#partie-pill').textContent = partieId ? `partieId=${partieId}` : '(pas de partie)';
-    }
-    refreshPill();
-
-    // ---------- connexion & joinPartie ----------
-    async function connectAndJoin() {
-      if (!partieId) {
-        const asked = prompt('partieId ?');
-        if (!asked) return log('❌ Pas de partieId, abandon.');
-        partieId = Number(asked);
-        refreshPill();
-      }
-      const token = localStorage.getItem('auth_token') || prompt('Token (sera mémorisé localStorage):');
-      if (!token) return log('❌ Aucun token fourni.');
-
-      localStorage.setItem('auth_token', token);
-
-      socket = io('http://localhost:3000', { auth: { token } });
-
-      socket.on('connect', () => log('✅ Connecté WS', { id: socket.id }));
-      socket.on('connect_error', err => log('❌ connect_error', err.message));
-
-      // === événements de la table / enchères ===
-      socket.on('joinedPartie', (payload) => {
-        log('🎉 joinedPartie', payload);
-        // on récupère la manche courante si dispo
-        if (payload.mancheId) {
-          mancheId = payload.mancheId;
-          log('ℹ️ manche courante =', mancheId);
-        }
-      });
-
-      socket.on('bidding:state', (payload) => {
-        log('📥 bidding:state', payload);
-        // si on n’avait pas de mancheId, on peut le fixer ici
-        if (!mancheId && payload?.mancheId) mancheId = payload.mancheId;
-      });
-
-      socket.on('bidding:placed', (payload) => {
-        log('📝 bidding:placed', payload);
-      });
-
-      // (Optionnel) écoute d’autres événements de partie…
-      // socket.on('carteJouee', p => log('🂠 carteJouee', p));
-
-      // === on rejoint la room de la partie ===
-      socket.emit('joinPartie', { partieId });
-      log('➡️ emit joinPartie', { partieId });
-    }
-
-    // ---------- actions UI ----------
-    q('#btn-connect').addEventListener('click', connectAndJoin);
-
-    q('#btn-get-state').addEventListener('click', () => {
-      if (!socket) return log('⚠️ pas de socket');
-      if (!mancheId) {
-        const asked = prompt('mancheId ? (pas reçu dans joinedPartie)');
-        if (!asked) return;
-        mancheId = Number(asked);
-      }
-      socket.emit('bidding:getState', { mancheId });
-      log('➡️ emit bidding:getState', { mancheId });
-    });
-
-    q('#btn-pass').addEventListener('click', () => {
-      if (!socket) return log('⚠️ pas de socket');
-      if (!mancheId) return log('⚠️ pas de mancheId (click "Get state" ou joins la partie)');
-      socket.emit('bidding:place', { mancheId, type: 'pass' });
-      log('➡️ emit bidding:place', { mancheId, type: 'pass' });
-    });
-
-    q('#btn-take').addEventListener('click', () => {
-      if (!socket) return log('⚠️ pas de socket');
-      if (!mancheId) return log('⚠️ pas de mancheId');
-      socket.emit('bidding:place', { mancheId, type: 'take_card' });
-      log('➡️ emit bidding:place', { mancheId, type: 'take_card' });
-    });
-
-    q('#btn-choose').addEventListener('click', () => {
-      if (!socket) return log('⚠️ pas de socket');
-      if (!mancheId) return log('⚠️ pas de mancheId');
-      const couleur = Number(prompt('Couleur atout id ? (ex: 1=♥)')) || 1;
-      socket.emit('bidding:place', { mancheId, type: 'choose_color', couleurAtoutId: couleur });
-      log('➡️ emit bidding:place', { mancheId, type: 'choose_color', couleurAtoutId: couleur });
-    });
-
-    // ---------- auto-connect si partieId présent dans l’URL ----------
-    if (partieId) {
-      // Option: auto-connect pour gagner un clic
-      // connectAndJoin();
-    }
-  </script>
+  <script src="./game.js"></script>
 </body>
 
 </html>

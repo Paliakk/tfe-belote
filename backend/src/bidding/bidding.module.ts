@@ -9,5 +9,6 @@ import { PartieGuard } from 'src/common/partie.guard';
   imports: [PrismaModule,MancheModule],
   controllers: [BiddingController],
   providers: [BiddingService,PartieGuard],
+  exports:[BiddingService]
 })
 export class BiddingModule {}

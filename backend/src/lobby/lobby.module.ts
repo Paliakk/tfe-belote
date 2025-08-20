@@ -10,7 +10,8 @@ import { RealtimeModule } from 'src/realtime/realtime.module';
 
 @Module({
   controllers: [LobbyController],
-  providers: [LobbyService,LobbyGateway,PrismaService,RealtimeService,AuthModule],
-  imports:[PrismaModule,RealtimeModule,AuthModule]
+  providers: [LobbyService,PrismaService,RealtimeService,AuthModule],
+  imports:[PrismaModule,RealtimeModule,AuthModule],
+  exports:[LobbyService]
 })
 export class LobbyModule {}

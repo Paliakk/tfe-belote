@@ -25,7 +25,7 @@ export class BiddingGateway implements OnGatewayInit {
     private readonly rt: RealtimeService,
     private readonly biddingService: BiddingService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   afterInit(server: Server) {
     // OK si déjà appelé ailleurs : on s’assure que RealtimeService a bien le server
@@ -50,8 +50,11 @@ export class BiddingGateway implements OnGatewayInit {
     @ConnectedSocket() client: Socket & { user?: { sub: number } },
   ) {
     const state = await this.biddingService.getState(data.mancheId);
-
-    const payload: BiddingStatePayload = {
+    const seats = await this.biddingService.getSeatsForManche(data.mancheId);
+    const payload: BiddingStatePayload & {
+      seats: { seat: number; joueurId: number; username: string }[];
+      carteRetournee?: { id: number; valeur: string; couleurId: number } | null;
+    } = {
       mancheId: state.mancheId,
       joueurActuelId: state.joueurActuelId,
       tourActuel: state.tourActuel as 1 | 2,
@@ -62,10 +65,12 @@ export class BiddingGateway implements OnGatewayInit {
         encherePoints: undefined,
         createdAt: e.at.toISOString(),
       })),
+      seats,
+      carteRetournee: state.carteRetournee
+        ? { id: state.carteRetournee.id, valeur: state.carteRetournee.valeur, couleurId: state.carteRetournee.couleurId }
+        : null,
     };
-
-    // ➜ au demandeur (pratique pour un “refresh” ciblé)
-    client.emit(GameEvent.BiddingState, payload);
+    client.emit(GameEvent.BiddingState, payload)
 
     // (Option) tu peux aussi diffuser à toute la table si tu veux resynchroniser tout le monde :
     // const partieId = await this.getPartieIdFromManche(data.mancheId);
@@ -74,51 +79,70 @@ export class BiddingGateway implements OnGatewayInit {
 
   // === Poser une enchère (diffusée à TOUTE la room de la partie) ===
   @SubscribeMessage('bidding:place')
-  async placeBid(
-    @MessageBody() data: {
-      mancheId: number;
-      type: 'pass' | 'take_card' | 'choose_color';
-      couleurAtoutId?: number;
-    },
-    @ConnectedSocket() client: Socket & { user?: { sub: number } },
-  ) {
-    const joueurId = client.user!.sub;
+  async placeBid(@MessageBody() data: { mancheId: number; type: 'pass' | 'take_card' | 'choose_color'; couleurAtoutId?: number; },
+    @ConnectedSocket() client: Socket & { user?: { sub: number } }) {
 
-    // 1) Action métier
-    await this.biddingService.placeBid(data.mancheId, joueurId, {
+    const joueurId = client.user!.sub;
+    const res = await this.biddingService.placeBid(data.mancheId, joueurId, {
       type: data.type as BidType,
       couleurAtoutId: data.couleurAtoutId,
     });
 
-    // 2) Identifier la room de diffusion
     const partieId = await this.getPartieIdFromManche(data.mancheId);
 
-    // 3) “event court” pour l’UX (qui a joué quoi)
-    const placedPayload: BiddingPlacedPayload = {
-      mancheId: data.mancheId,
-      joueurId,
-      type: data.type,
-      couleurAtoutId: data.couleurAtoutId ?? undefined,
-      encherePoints: undefined, // pas utilisé ici
-      tour: 1, // ou calcule si tu l’as côté service
-      at: new Date().toISOString(),
-    };
-    this.rt.emitToPartie(partieId, GameEvent.BiddingPlaced, placedPayload);
+    // event "court" (UX)
+    this.rt.emitToPartie(partieId, GameEvent.BiddingPlaced, {
+      mancheId: data.mancheId, joueurId, type: data.type,
+      couleurAtoutId: data.couleurAtoutId ?? undefined, encherePoints: undefined,
+      tour: 1, at: new Date().toISOString(),
+    });
 
-    // 4) “état complet” pour que tout le monde se resynchronise exactement
+    // état complet à toute la table
     const updated = await this.biddingService.getState(data.mancheId);
-    const statePayload: BiddingStatePayload = {
+    const seats = await this.biddingService.getSeatsForManche(data.mancheId)
+    this.rt.emitToPartie(partieId, GameEvent.BiddingState, {
       mancheId: updated.mancheId,
       joueurActuelId: updated.joueurActuelId,
       tourActuel: updated.tourActuel as 1 | 2,
-      encheres: updated.historique.map((e) => ({
+      encheres: updated.historique.map(e => ({
         joueurId: e.joueur.id,
         type: e.type,
         couleurAtoutId: e.couleurAtoutId ?? undefined,
         encherePoints: undefined,
         createdAt: e.at.toISOString(),
       })),
-    };
-    this.rt.emitToPartie(partieId, GameEvent.BiddingState, statePayload);
+      seats,
+      carteRetournee: updated.carteRetournee
+        ? { id: updated.carteRetournee.id, valeur: updated.carteRetournee.valeur, couleurId: updated.carteRetournee.couleurId }
+        : null,
+    });
+
+    // 👉 Cas 1: prise (TAKE_CARD / CHOOSE_COLOR) -> redistrib finale: mains à jour pour chacun
+    if (res.message?.startsWith('Preneur fixé')) {
+      await this.rt.emitHandsForPartie(this.prisma, partieId, data.mancheId);
+      // Option: signaler fin d’enchère pour l’UI
+      this.rt.emitToPartie(partieId, 'bidding:ended', {
+        mancheId: data.mancheId, preneurId: joueurId,
+        atoutId: (data.type === 'take_card') ? updated.carteRetournee?.couleurId : data.couleurAtoutId
+      });
+      return;
+    }
+
+    // 👉 Cas 2: relance
+    if (res.newMancheId) {
+      // avertir toute la table
+      this.rt.emitToPartie(partieId, 'donne:relancee', {
+        oldMancheId: data.mancheId, newMancheId: res.newMancheId, numero: res.numero
+      });
+      // pousser les nouvelles mains pour la nouvelle donne
+      await this.rt.emitHandsForPartie(this.prisma, partieId, res.newMancheId);
+      // et pousser l’état d’enchères initial de la nouvelle donne
+      const st2 = await this.biddingService.getState(res.newMancheId);
+      this.rt.emitToPartie(partieId, GameEvent.BiddingState, {
+        mancheId: st2.mancheId, joueurActuelId: st2.joueurActuelId,
+        tourActuel: st2.tourActuel as 1 | 2,
+        encheres: st2.historique.map(e => ({ joueurId: e.joueur.id, type: e.type, couleurAtoutId: e.couleurAtoutId ?? undefined, encherePoints: undefined, createdAt: e.at.toISOString() })),
+      });
+    }
   }
 }
