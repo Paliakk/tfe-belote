@@ -39,3 +39,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     };
   }
 }
+export interface JwtPayload {
+  sub: number; // joueurId
+  email: string;
+  username: string;
+}

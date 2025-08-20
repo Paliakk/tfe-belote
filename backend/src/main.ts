@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { RealtimeService } from './realtime/realtime.service';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
    // Validation globale des DTOs
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
 
   // CORS pour le front pour plus tard
   app.enableCors({

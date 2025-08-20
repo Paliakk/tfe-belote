@@ -142,7 +142,13 @@ export class BiddingService {
                     where: { id: mancheId },
                     data: { joueurActuelId: leftOfDealerId }
                 })
-                return { message: `Preneur fixé: joueur ${joueurId}, atout=${atoutId}. Distribution complétée.` }
+                return { 
+                    message: `Preneur fixé: joueur ${joueurId}, atout=${atoutId}. Distribution complétée.`,
+                    partieId: manche.partieId,
+                    atoutId,
+                    preneurId:joueurId,
+                    mancheId
+                }
             }
             //3. Sinon, c'est un "pass" -> avancer au joueur suivant ou changer de tour
 
@@ -162,14 +168,15 @@ export class BiddingService {
                         where: { id: mancheId },
                         data: { tourActuel: 2, joueurActuelId: leftOfDealerId }
                     })
-                    return { message: `Tour 1 terminé sans preneur. Passage au tour 2.` }
+                    return { message: `Tour 1 terminé sans preneur. Passage au tour 2.`,partieId: manche.partieId }
                 } else {
                     //Tour 2 terminé sans preneur -> UC14 Relancer donne
                     const relance = await this.mancheService.relancerMancheByMancheId(manche.id)
                     return {
                         message: `Personne n'a pris au tour 2. Donne relancée (UC14).`,
                         newMancheId:relance.newMancheId,      // service renvoie { newMancheId, numero }
-                        numero: relance.numero
+                        numero: relance.numero,
+                        partieId: manche.partieId
                 }
             }
         } else {
@@ -178,7 +185,7 @@ export class BiddingService {
                 where: { id: mancheId },
                 data: { joueurActuelId: nextPlayerId }
             })
-                return { message: `Pass. Joueur suivant: ${nextPlayerId}.` }
+                return { message: `Pass. Joueur suivant: ${nextPlayerId}.`,partieId: manche.partieId }
         }
         }, { isolationLevel: 'Serializable' })
     }

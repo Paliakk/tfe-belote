@@ -259,4 +259,65 @@ export class LobbyService {
             };
         }, { isolationLevel: 'Serializable' });
     }
+    async findPartieWithEquipe(partieId: number, joueurId: number) {
+        const partie = await this.prisma.partie.findUnique({
+            where: { id: partieId },
+            include: {
+                mancheCourante: true,
+                equipes: {
+                    include: {
+                        joueurs: true,
+                    },
+                },
+            },
+        });
+
+        if (!partie) {
+            throw new NotFoundException(`Partie ${partieId} introuvable.`);
+        }
+
+        const equipe = partie.equipes.find((e) =>
+            e.joueurs.some((j) => j.joueurId === joueurId),
+        );
+
+        if (!equipe) {
+            throw new ForbiddenException(`Joueur ${joueurId} non membre de la partie ${partieId}.`);
+        }
+
+        return {
+            partie,
+            equipeId: equipe.id,
+        };
+    }
+
+    async findByName(nom: string) {
+        const lobby = await this.prisma.lobby.findFirst({
+            where: { nom },
+            select: { id: true }
+        });
+        if (!lobby) throw new NotFoundException(`Lobby "${nom}" introuvable.`);
+        return lobby;
+    }
+    async joinByName(nom: string, joueurId: number) {
+        console.log(`[Service] Tentative de rejoindre par nom: ${nom} (joueur ${joueurId})`);
+        const lobby = await this.prisma.lobby.findFirst({
+            where: { nom },
+        });
+
+        if (!lobby) {
+            console.warn(`[Service] Lobby "${nom}" introuvable`);
+            throw new NotFoundException(`Lobby "${nom}" introuvable.`);
+        }
+
+        return this.join({ lobbyId: lobby.id }, joueurId);
+    }
+
+    async leaveSocket(lobbyId: number, joueurId: number) {
+        const result = await this.leave(lobbyId, joueurId); // on réutilise la méthode existante
+        return {
+            lobbyId,
+            joueurId,
+            message: result.message,
+        };
+    }
 }

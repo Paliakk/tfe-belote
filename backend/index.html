@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <base href="./">
+    <meta charset="UTF-8">
+    <title>Test Socket.IO - Belote</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #fafafa;
+            padding: 1em;
+        }
+
+        button {
+            margin: 4px;
+        }
+
+        #log {
+            background: #222;
+            color: #0f0;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        #membres-list {
+            margin-top: 1em;
+            padding: 0;
+            list-style: none;
+            border: 1px solid #ccc;
+            max-width: 300px;
+            background: white;
+            min-height: 100px;
+        }
+
+        #membres-list li {
+            padding: 6px 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        #membres-list li:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Test WebSocket Belote</h1>
+    <button onclick="connect()">🔐 Se connecter</button>
+    <button onclick="createLobby()">🎲 Créer lobby</button>
+    <button onclick="joinLobbyByName()">Rejoindre par nom</button>
+    <button onclick="leaveLobby()">Quitter lobby</button>
+    <button onclick="startGame()">Lancer la partie</button>
+    <button onclick="chat()">💬 Chat lobby</button>
+    <button onclick="clearLogs()">🧹 Nettoyer logs</button>
+
+    <h2>Membres du lobby</h2>
+    <ul id="membres-list"></ul>
+
+    <h2>Logs</h2>
+    <pre id="log"></pre>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        let socket;
+        let currentLobbyId = null;
+
+        const logEl = () => document.getElementById('log');
+        const listEl = () => document.getElementById('membres-list');
+        const FRONTEND_ORIGIN = window.location.origin;
+
+        socket.on('partie:started', ({ partieId, mancheId }) => {
+            const url = `${FRONTEND_ORIGIN}/game.html?partieId=${encodeURIComponent(partieId)}`
+                + (mancheId ? `&mancheId=${encodeURIComponent(mancheId)}` : '');
+            window.location.assign(url);
+        });
+        function log(msg) {
+            logEl().textContent += msg + '\n';
+            console.log(msg);
+        }
+        function clearLogs() { logEl().textContent = ''; }
+
+        function renderMembers(membres = []) {
+            const el = listEl();
+            el.innerHTML = '';
+            membres.forEach(m => {
+                const li = document.createElement('li');
+                li.textContent = `${m.username} (ID: ${m.id})`;
+                el.appendChild(li);
+            });
+        }
+
+        function connect() {
+            const token = prompt('Entrez votre token Auth0 :');
+            if (!token) return log('❌ Aucun token fourni.');
+            localStorage.setItem('auth_token', token);
+
+            socket = io('http://localhost:3000', { auth: { token } });
+
+            socket.on('connect', () => log('✅ Connecté au serveur WS'));
+            socket.on('connect_error', err => log('❌ Erreur connexion : ' + err.message));
+
+            // on stocke l’ID du lobby dès qu’on le reçoit
+            socket.on('lobby:joined', ({ lobbyId }) => {
+                currentLobbyId = lobbyId;
+                log(`🎉 Lobby rejoint avec ID: ${currentLobbyId}`);
+            });
+
+            // ——— Rendu piloté par l’état ———
+            socket.on('lobby:state', ({ lobbyId, membres }) => {
+                currentLobbyId = currentLobbyId ?? lobbyId;
+                log(`📦 State lobby ${lobbyId} — ${membres.length} membre(s)`);
+                renderMembers(membres);
+            });
+
+            // En bonus: petit event court pour les logs UX
+            socket.on('lobby:update', ({ lobbyId, type, joueur }) => {
+                log(`📢 ${type === 'join' ? '➕' : '➖'} ${joueur} (${type}) dans lobby ${lobbyId}`);
+            });
+
+            socket.on('lobby:closed', ({ lobbyId }) => {
+                log(`🚪 Lobby ${lobbyId} fermé/supprimé`);
+                renderMembers([]); // clean
+                currentLobbyId = null;
+            });
+
+            // ——— Redirection quand la partie démarre ———
+            socket.on('lobby:gameStarted', ({ partieId }) => {
+                // construit une URL relative au fichier courant (respecte /backend/)
+                const url = new URL('game.html', window.location.href);
+                url.searchParams.set('partieId', String(partieId));
+                window.location.assign(url.toString());
+            });
+        }
+
+        // ——— Boutons ———
+        function createLobby() {
+            const nom = prompt('Nom du lobby à créer ?') || 'Lobby Test';
+            socket.emit('lobby:create', { nom }, (res) => {
+                if (res?.lobbyId) {
+                    currentLobbyId = res.lobbyId;
+                    log(`🎉 Lobby créé: ${currentLobbyId}`);
+                }
+            });
+            log('🔹 Emit lobby:create');
+        }
+
+        function joinLobbyByName() {
+            const nom = prompt('Nom du lobby ?') || 'test';
+            socket.emit('lobby:joinByName', { nom });
+            log('🔹 Emit lobby:joinByName');
+        }
+
+        function leaveLobby() {
+            if (!currentLobbyId) return log('⚠️ Aucun lobby en cours.');
+            socket.emit('lobby:leaveRoom', { lobbyId: currentLobbyId });
+            log('🔹 Emit lobby:leaveRoom');
+        }
+
+        function chat() {
+            if (!currentLobbyId) return log('⚠️ Aucun lobby');
+            const message = prompt('Message à envoyer :');
+            if (!message) return;
+            socket.emit('lobby:chat', { lobbyId: currentLobbyId, message });
+            log('🔹 Emit lobby:chat');
+        }
+
+        function startGame() {
+            if (!socket || !socket.connected) {
+                log('⚠️ Non connecté au WS');
+                return;
+            }
+
+            // Utilise l’ID courant si on l’a, sinon demande-le à l’utilisateur
+            const id = currentLobbyId ?? parseInt(prompt('ID du lobby ?'), 10);
+            if (!id) {
+                log('❌ Aucun lobbyId fourni.');
+                return;
+            }
+
+            const scoreMax = parseInt(prompt('Score max (ex: 301) ?', '301'), 10) || 301;
+
+            socket.emit('lobby:startGame', { lobbyId: id, scoreMax });
+            log(`🔹 Emit lobby:startGame { lobbyId: ${id}, scoreMax: ${scoreMax} }`);
+        }
+    </script>
+</body>
+
+</html>

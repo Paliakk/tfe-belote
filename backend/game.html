@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <base href="./">
+  <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  connect-src http://localhost:3000 ws://localhost:3000;
+  script-src 'self' https://cdn.socket.io;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:
+">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
+  <link rel="shortcut icon" href="data:,">
+
+  <meta charset="UTF-8" />
+  <title>Belote – Table</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+      background: #f7f7f9;
+    }
+
+    .row {
+      margin: 8px 0;
+    }
+
+    button {
+      margin: 4px 8px 4px 0;
+    }
+
+    #log {
+      background: #111;
+      color: #9f9;
+      padding: 10px;
+      min-height: 220px;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #eee;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Belote – Table <span id="partie-pill" class="pill"></span></h1>
+
+  <div class="row">
+    <button id="btn-connect">🔐 Se connecter & Rejoindre la partie</button>
+  </div>
+
+  <div class="row">
+    <button id="btn-get-state">📥 Get bidding state</button>
+    <button id="btn-pass">🙅 Pass</button>
+    <button id="btn-take">🃏 Take card</button>
+    <button id="btn-choose">🎨 Choose color (♥=1)</button>
+  </div>
+
+  <h2>Logs</h2>
+  <pre id="log"></pre>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    // ---------- helpers ----------
+    function q(sel) { return document.querySelector(sel); }
+    function log(...args) { const el = q('#log'); el.textContent += args.map(a => typeof a === 'string' ? a : JSON.stringify(a, null, 2)).join(' ') + '\n'; console.log(...args); }
+    function getQuery(name) { return new URLSearchParams(location.search).get(name); }
+
+    // ---------- état client ----------
+    let socket;
+    let partieId = Number(getQuery('partieId')) || null;
+    let mancheId = Number(getQuery('mancheId')) || null; // optionnel, sera mis à jour après joinedPartie
+
+    // affiche l’ID en haut
+    function refreshPill() {
+      q('#partie-pill').textContent = partieId ? `partieId=${partieId}` : '(pas de partie)';
+    }
+    refreshPill();
+
+    // ---------- connexion & joinPartie ----------
+    async function connectAndJoin() {
+      if (!partieId) {
+        const asked = prompt('partieId ?');
+        if (!asked) return log('❌ Pas de partieId, abandon.');
+        partieId = Number(asked);
+        refreshPill();
+      }
+      const token = localStorage.getItem('auth_token') || prompt('Token (sera mémorisé localStorage):');
+      if (!token) return log('❌ Aucun token fourni.');
+
+      localStorage.setItem('auth_token', token);
+
+      socket = io('http://localhost:3000', { auth: { token } });
+
+      socket.on('connect', () => log('✅ Connecté WS', { id: socket.id }));
+      socket.on('connect_error', err => log('❌ connect_error', err.message));
+
+      // === événements de la table / enchères ===
+      socket.on('joinedPartie', (payload) => {
+        log('🎉 joinedPartie', payload);
+        // on récupère la manche courante si dispo
+        if (payload.mancheId) {
+          mancheId = payload.mancheId;
+          log('ℹ️ manche courante =', mancheId);
+        }
+      });
+
+      socket.on('bidding:state', (payload) => {
+        log('📥 bidding:state', payload);
+        // si on n’avait pas de mancheId, on peut le fixer ici
+        if (!mancheId && payload?.mancheId) mancheId = payload.mancheId;
+      });
+
+      socket.on('bidding:placed', (payload) => {
+        log('📝 bidding:placed', payload);
+      });
+
+      // (Optionnel) écoute d’autres événements de partie…
+      // socket.on('carteJouee', p => log('🂠 carteJouee', p));
+
+      // === on rejoint la room de la partie ===
+      socket.emit('joinPartie', { partieId });
+      log('➡️ emit joinPartie', { partieId });
+    }
+
+    // ---------- actions UI ----------
+    q('#btn-connect').addEventListener('click', connectAndJoin);
+
+    q('#btn-get-state').addEventListener('click', () => {
+      if (!socket) return log('⚠️ pas de socket');
+      if (!mancheId) {
+        const asked = prompt('mancheId ? (pas reçu dans joinedPartie)');
+        if (!asked) return;
+        mancheId = Number(asked);
+      }
+      socket.emit('bidding:getState', { mancheId });
+      log('➡️ emit bidding:getState', { mancheId });
+    });
+
+    q('#btn-pass').addEventListener('click', () => {
+      if (!socket) return log('⚠️ pas de socket');
+      if (!mancheId) return log('⚠️ pas de mancheId (click "Get state" ou joins la partie)');
+      socket.emit('bidding:place', { mancheId, type: 'pass' });
+      log('➡️ emit bidding:place', { mancheId, type: 'pass' });
+    });
+
+    q('#btn-take').addEventListener('click', () => {
+      if (!socket) return log('⚠️ pas de socket');
+      if (!mancheId) return log('⚠️ pas de mancheId');
+      socket.emit('bidding:place', { mancheId, type: 'take_card' });
+      log('➡️ emit bidding:place', { mancheId, type: 'take_card' });
+    });
+
+    q('#btn-choose').addEventListener('click', () => {
+      if (!socket) return log('⚠️ pas de socket');
+      if (!mancheId) return log('⚠️ pas de mancheId');
+      const couleur = Number(prompt('Couleur atout id ? (ex: 1=♥)')) || 1;
+      socket.emit('bidding:place', { mancheId, type: 'choose_color', couleurAtoutId: couleur });
+      log('➡️ emit bidding:place', { mancheId, type: 'choose_color', couleurAtoutId: couleur });
+    });
+
+    // ---------- auto-connect si partieId présent dans l’URL ----------
+    if (partieId) {
+      // Option: auto-connect pour gagner un clic
+      // connectAndJoin();
+    }
+  </script>
+</body>
+
+</html>

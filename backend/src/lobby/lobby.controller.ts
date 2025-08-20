@@ -87,6 +87,11 @@ export class LobbyController {
         @Req() req: any
     ) {
         const createurId = req.user.joueurId as number
-        return this.lobbyService.startGame(lobbyId,createurId, dto.scoreMax)
+        return this.lobbyService.startGame(lobbyId, createurId, dto.scoreMax)
+    }
+    @Get('/by-name/:nom')
+    async getLobbyByName(@Param('nom') nom: string) {
+        const lobby = await this.lobbyService.findByName(nom);
+        return lobby;
     }
 }
