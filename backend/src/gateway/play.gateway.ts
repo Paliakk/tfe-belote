@@ -10,6 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { PlayService } from 'src/play/play.service';
 import { PlayQueriesService } from 'src/play/play.queries';
 import { TrickService } from 'src/play/trick.service';
+import { BiddingService } from 'src/bidding/bidding.service';
 
 type PlayCardOngoing =
     { message: string; pliNumero: number; cartesDansPli: number; nextPlayerId: number | null; requiresEndOfTrick: boolean; appliedBonuses: string[] };
@@ -33,6 +34,7 @@ export class PlayGateway implements OnGatewayInit {
         private readonly play: PlayService,
         private readonly queries: PlayQueriesService,
         private readonly trick: TrickService,
+        private readonly bidding: BiddingService
     ) { }
 
     afterInit(server: Server) {
@@ -172,7 +174,7 @@ export class PlayGateway implements OnGatewayInit {
 
             const res = await this.play.playCard(mancheId, joueurId, carteId);
             const partieId = await this.getPartieIdFromManche(mancheId);
-            
+
             // 0) Belote/Rebelote visuel (optionnel mais demandé)
             if ('beloteEvent' in res && res.beloteEvent) {
                 // broadcast à toute la table
@@ -215,7 +217,7 @@ export class PlayGateway implements OnGatewayInit {
                 this.rt.emitToJoueur(nextId, 'play:playable', { carteIds: nextIds });
             }
 
-            // 4) Pli clôturé → envoyer le pli précédent pour l’affichage
+            // 4) Pli clôturé → envoyer le pli précédent + score live
             const trickClosed =
                 ('requiresEndOfHand' in res && res.requiresEndOfHand) ||
                 ('createdNextTrick' in res && res.createdNextTrick) ||
@@ -225,13 +227,55 @@ export class PlayGateway implements OnGatewayInit {
                 const prev = await this.trick.previousTrick(mancheId);
                 if (prev?.cartes?.length) {
                     this.rt.emitToPartie(partieId, 'trick:closed', {
-                        cartes: prev.cartes, gagnantId: prev.gagnantId
+                        cartes: prev.cartes,
+                        gagnantId: prev.gagnantId,
                     });
                 }
 
-                // 🟢 score live à toute la partie
+                // score live à toute la table
                 const live = await this.trick.scoreLive(mancheId);
                 this.rt.emitToPartie(partieId, 'score:live', live);
+            }
+
+            // 5) Fin de manche (UC12) auto : si UC11 a enchaîné endOfHand, on diffuse tout
+            if ('endOfHand' in res && res.endOfHand) {
+                const end = res.endOfHand; // payload renvoyé par MancheService.endOfHand()
+
+                // a) informer la table que la manche est terminée (scores détaillés + cumuls + décision)
+                this.rt.emitToPartie(partieId, 'manche:ended', end);
+
+                // b) Game over ?
+                if (end.gameOver) {
+                    this.rt.emitToPartie(partieId, 'game:over', end.gameOver);
+                    return { ok: true };
+                }
+
+                // c) Nouvelle manche créée par UC12 → pousser mains + état d’enchères initial
+                if (end.nextManche) {
+                    const next = end.nextManche; // { id, numero, donneurId, joueurActuelId, carteRetourneeId }
+
+                    // event léger pour que le front réaffiche le bon mancheId dans ses pills
+                    this.rt.emitToPartie(partieId, 'donne:relancee', { // on réutilise l’event déjà géré côté front
+                        newMancheId: next.id,
+                        numero: next.numero,
+                    });
+
+                    // mains complètes de la nouvelle manche (à chaque joueur)
+                    await this.rt.emitHandsForPartie(this.prisma, partieId, next.id);
+
+                    // état d’enchères initial (avec seats pour l’UI)
+                    const [state, seats] = await Promise.all([
+                        this.bidding.getState(next.id),
+                        this.bidding.getSeatsForManche(next.id),
+                    ]);
+                    this.rt.emitToPartie(partieId, 'bidding:state', { ...state, seats });
+
+                    // reset visuel du score live (0/0) pour la nouvelle manche (pratique côté UI)
+                    this.rt.emitToPartie(partieId, 'score:live', { mancheId: next.id, team1: 0, team2: 0 });
+
+                    // (optionnel) reset belote affichée
+                    this.rt.emitToPartie(partieId, 'belote:reset', { mancheId: next.id });
+                }
             }
 
             return { ok: true };

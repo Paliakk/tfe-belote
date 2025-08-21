@@ -3,6 +3,16 @@
   console.log('[game] game.js chargé');
 
   // ---------- helpers ----------
+  let totalTeam1 = 0, totalTeam2 = 0;
+
+  function renderTotals(t1, t2) {
+    totalTeam1 = Number(t1) || 0;
+    totalTeam2 = Number(t2) || 0;
+    const T1 = q('#total1'), T2 = q('#total2');
+    if (T1) T1.textContent = String(totalTeam1);
+    if (T2) T2.textContent = String(totalTeam2);
+  }
+
   function renderAtout() {
     const el = q('#atout-pill'); if (!el) return;
     if (!currentAtoutId) {
@@ -364,6 +374,10 @@
       log('🟡 Rebelote !', p);
       renderSeats({ ...lastBiddingState, joueurActuelId: currentTurnPlayerId });
     });
+    socket.on('belote:reset', (p) => {
+      beloteByPlayer.clear();
+      renderSeats({ ...lastBiddingState, joueurActuelId: currentTurnPlayerId });
+    })
 
     // === Tour de jeu ===
     socket.on('turn:state', (p) => {
@@ -436,6 +450,30 @@
       renderAtout()
       // les mains/état suivront via hand:state + bidding:state
     });
+    socket.on('manche:ended', (end) => {
+      log('🏁 manche:ended', end);
+
+      // Met à jour le total cumulé renvoyé par UC12
+      if (end?.cumule) {
+        renderTotals(end.cumule.team1, end.cumule.team2);
+      }
+
+      // Si game over, on attend 'game:over' (voir plus bas)
+      if (end?.gameOver) {
+        // rien de spécial ici, le handler 'game:over' fera l’affichage
+        return;
+      }
+
+      // Sinon, UC12 a aussi créé la prochaine manche via end.nextManche
+      // Le gateway doit ensuite émettre 'donne:relancee' + hands + bidding:state (cf. patch PlayGateway)
+      // Ton front les écoute déjà (joined/new hands/bidding etc.)
+    });
+    socket.on('game:over', (p) => {
+      log('🏆 game:over', p);
+      const who = p?.winnerTeamNumero ? `Équipe ${p.winnerTeamNumero}` : '—';
+      const msg = `Partie terminée. Vainqueur: ${who}  (T1=${p?.totals?.team1 ?? '?'}, T2=${p?.totals?.team2 ?? '?'})`;
+      alert(msg);
+    })
   }
 
   // ---------- actions UI (debug enchères) ----------
