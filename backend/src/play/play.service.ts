@@ -13,7 +13,7 @@ export class PlayService {
         private readonly rules: RulesService,
         private readonly trick: TrickService,
         private readonly mancheService: MancheService,
-        private readonly partieGuard : PartieGuard
+        private readonly partieGuard: PartieGuard
     ) { }
     /**
    * UC07 — Jouer une carte
@@ -25,6 +25,7 @@ export class PlayService {
    */
     async playCard(mancheId: number, joueurId: number, carteId: number) {
         await this.partieGuard.ensureEnCoursByMancheId(mancheId);
+
         const result = await this.prisma.$transaction(async (tx) => {
             // 0) Charger état nécessaire
             const manche = await tx.manche.findUnique({
@@ -101,8 +102,48 @@ export class PlayService {
                 where: { joueurId, mancheId, carteId, jouee: false },
                 data: { jouee: true }
             });
-            //Détection Belote
-            const belote = await this.mancheService.markBeloteIfNeeded(mancheId, joueurId, tx)
+            // Helpers
+            const norm = (v: string) => v.trim().toLowerCase();
+            const isK = (v: string) => ['roi', 'k'].includes(norm(v));
+            const isQ = (v: string) => ['dame', 'q'].includes(norm(v));
+
+            let beloteEvent: 'belote' | 'rebelote' | null = null;
+
+            const atoutId = manche.couleurAtoutId ?? null;
+            const isTrump = atoutId != null && carte.couleurId === atoutId;
+            const isTrumpKQ = isTrump && (isK(carte.valeur) || isQ(carte.valeur));
+
+            if (isTrumpKQ) {
+                // 1) Est-ce que le joueur a K et Q d'atout EN MAIN à cet instant ?
+                const hasTrumpK = mainJoueur.some(c => c.couleurId === atoutId && isK(c.valeur));
+                const hasTrumpQ = mainJoueur.some(c => c.couleurId === atoutId && isQ(c.valeur));
+
+                if (hasTrumpK && hasTrumpQ) {
+                    // 2) A-t-il déjà joué l'une des deux auparavant ?
+                    const alreadyPlayedCount = await tx.pliCarte.count({
+                        where: {
+                            joueurId,
+                            pli: { mancheId },
+                            carte: { couleurId: atoutId, valeur: { in: ['Roi', 'Dame', 'roi', 'dame', 'K', 'Q'] } },
+                        },
+                    });
+
+                    if (alreadyPlayedCount === 0) {
+                        // 👉 Déclaration BEL0TE (première carte du duo, l’autre est encore en main)
+                        // On marque la manche tout de suite (points assurés au score)
+                        if (manche.beloteJoueurId == null) {
+                            await tx.manche.update({
+                                where: { id: mancheId },
+                                data: { beloteJoueurId: joueurId },
+                            });
+                        }
+                        beloteEvent = 'belote';
+                    } else {
+                        // 👉 REBELOTE (deuxième carte du duo posée)
+                        beloteEvent = 'rebelote';
+                    }
+                }
+            }
 
             // 3) Pli complet ?
             const nowPli = await tx.pli.findUnique({
@@ -124,7 +165,7 @@ export class PlayService {
                     cartesDansPli: cartesCount,
                     nextPlayerId,
                     requiresEndOfTrick: false, // (flag lu après le tx)
-                    appliedBonuses: belote.applied ? ['belote'] : []
+                    beloteEvent
                 };
             } else {
                 // Pli complet → on ne clôture pas ici
@@ -134,7 +175,7 @@ export class PlayService {
                     cartesDansPli: cartesCount,
                     nextPlayerId: null,
                     requiresEndOfTrick: true, // (flag lu après le tx)
-                    appliedBonuses: belote.applied ? ['belote'] : []
+                    beloteEvent
                 };
             }
         }, { isolationLevel: 'Serializable' });
@@ -145,7 +186,7 @@ export class PlayService {
             // Merge minimal pour conserver l’info belote de ce coup
             return {
                 ...closed,
-                appliedBonuses: result.appliedBonuses ?? [],
+                beloteEvent: (result as any).beloteEvent ?? null
             };
         }
 

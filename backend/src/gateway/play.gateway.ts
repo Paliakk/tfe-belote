@@ -134,6 +134,7 @@ export class PlayGateway implements OnGatewayInit {
             const joueurId = client.user.sub;
             const mancheId = data.mancheId;
 
+
             const turn = await this.prisma.manche.findUnique({
                 where: { id: mancheId }, select: { joueurActuelId: true }
             });
@@ -169,8 +170,17 @@ export class PlayGateway implements OnGatewayInit {
             const joueurId = client.user.sub;
             const { mancheId, carteId } = data;
 
-            const res: PlayCardResult = await this.play.playCard(mancheId, joueurId, carteId);
+            const res = await this.play.playCard(mancheId, joueurId, carteId);
             const partieId = await this.getPartieIdFromManche(mancheId);
+            
+            // 0) Belote/Rebelote visuel (optionnel mais demandé)
+            if ('beloteEvent' in res && res.beloteEvent) {
+                // broadcast à toute la table
+                this.rt.emitToPartie(partieId,
+                    res.beloteEvent === 'belote' ? 'belote:declared' : 'belote:rebelote',
+                    { mancheId, joueurId }
+                );
+            }
 
             // 1) Pli courant
             const trick = await this.queries.getActiveTrick(mancheId);

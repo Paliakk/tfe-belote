@@ -3,6 +3,19 @@
   console.log('[game] game.js chargé');
 
   // ---------- helpers ----------
+  function renderAtout() {
+    const el = q('#atout-pill'); if (!el) return;
+    if (!currentAtoutId) {
+      el.textContent = 'Atout: —';
+      el.style.background = '#fff';
+      el.style.color = '#333';
+      return;
+    }
+    const { sym, cls } = suitFromCouleurId(currentAtoutId);
+    el.textContent = `Atout: ${sym}`;
+    el.style.background = '#fff';
+    el.style.color = cls === 'red' ? '#c02020' : '#222';
+  }
   const q = (sel) => document.querySelector(sel);
   const log = (...a) => {
     try {
@@ -37,6 +50,9 @@
     return el;
   };
 
+  // Annonces Belote par joueur
+  const beloteByPlayer = new Map(); // joueurId -> 'belote' | 'rebelote'
+
   // token par onglet (URL ?token=... -> sessionStorage)
   function getToken() {
     const urlToken = new URLSearchParams(location.search).get('token');
@@ -52,7 +68,7 @@
   let mancheId = Number(getQuery('mancheId')) || null;
   let booted = false;
   let lastSeats = null;       // [{seat, joueurId, username}]
-  let mySeatIdx = null;     // 0..3 dans lastSeats
+  let mySeatIdx = null;       // 0..3 dans lastSeats
 
   // enchères / tour
   let lastBiddingState = null;
@@ -61,11 +77,13 @@
   // jeu
   let playableIds = new Set();   // cartes jouables pour "moi"
   let myHand = [];               // [{id,valeur,couleurId}...]
+  let currentAtoutId = null
 
   const setPills = () => {
     const p = q('#partie-pill'), m = q('#manche-pill');
     if (p) p.textContent = partieId ? `partieId=${partieId}` : '(pas de partie)';
     if (m) m.textContent = mancheId ? `mancheId=${mancheId}` : '(pas de manche)';
+    renderAtout()
   };
   setPills();
 
@@ -146,18 +164,21 @@
     if (socket?.connected && mancheId) socket.emit('score:getLive', { mancheId });
   }
 
-  /**
-   * trick attendu: { pliNumero, cartes: [{ordre, joueurId, carte:{id,valeur,couleurId}}], ... }
-   * seats: lastSeats (utilisé pour placer top/right/bottom/left via posForJoueur)
-   */
-
   // seats: on accepte state.seats [{seat, joueurId, username}] OU state.joueurs [{joueurId, username, seat?}]
   function renderSeats(state) {
     const top = q('#seat-top'), right = q('#seat-right'), bottom = q('#seat-bottom'), left = q('#seat-left');
     if (!top || !right || !bottom || !left) return;
 
     top.innerHTML = right.innerHTML = bottom.innerHTML = left.innerHTML = '';
+
     const pillTurn = (id) => state?.joueurActuelId === id ? `<div class="pill">à lui</div>` : '';
+    const pillBelote = (id) => {
+      if (!id) return '';
+      const ev = beloteByPlayer.get(id);
+      if (!ev) return '';
+      const label = ev === 'belote' ? 'Belote' : 'Belote';
+      return `<div class="pill" style="margin-top:6px;background:#ffeaa7;color:#4d3800;">🔔 ${label}</div>`;
+    };
 
     // fabrique un tableau "seats" à partir des infos dispo
     let seats = Array.isArray(state?.seats) ? state.seats.slice() : null;
@@ -168,9 +189,13 @@
         username: j.username ?? j.pseudo ?? `J${idx + 1}`,
       }));
     }
+    if (!seats && Array.isArray(lastSeats)) {
+      seats = lastSeats.slice();
+    }
+
+    // Fallback très simple si on n'a toujours pas de seats
     if (!seats || seats.length < 4) {
-      // fallback simple
-      bottom.innerHTML = `Moi ${pillTurn(joueurId)}`;
+      bottom.innerHTML = `Moi ${pillTurn(joueurId)} ${pillBelote(joueurId)}`;
       top.innerHTML = `Partenaire`;
       left.innerHTML = `Adversaire A`;
       right.innerHTML = `Adversaire B`;
@@ -179,13 +204,17 @@
 
     seats.sort((a, b) => a.seat - b.seat);
     lastSeats = seats;
+
     const me = seats.find(s => s.joueurId === joueurId);
-    mySeatIdx = me ? me.seat : null
+    mySeatIdx = me ? me.seat : null;
+
+    // Si on ne connaît pas "me", on affiche quand même quelque chose de cohérent
     if (!me) {
-      bottom.innerHTML = `Moi ${pillTurn(joueurId)}`;
-      top.innerHTML = `Partenaire`;
-      left.innerHTML = `Adversaire A`;
-      right.innerHTML = `Adversaire B`;
+      bottom.innerHTML = `Moi ${pillTurn(joueurId)} ${pillBelote(joueurId)}`;
+      const p0 = seats[0], p1 = seats[1], p2 = seats[2]; // arbitraire
+      top.innerHTML = `${p2?.username || 'Partenaire'} ${pillTurn(p2?.joueurId)} ${pillBelote(p2?.joueurId)}`;
+      left.innerHTML = `${p0?.username || 'Adversaire A'} ${pillTurn(p0?.joueurId)} ${pillBelote(p0?.joueurId)}`;
+      right.innerHTML = `${p1?.username || 'Adversaire B'} ${pillTurn(p1?.joueurId)} ${pillBelote(p1?.joueurId)}`;
       return;
     }
 
@@ -198,10 +227,10 @@
     const pOpp = seats.find(s => s.seat === seatOpp);
     const pLeft = seats.find(s => s.seat === seatLeft);
 
-    bottom.innerHTML = `${me.username || 'Moi'} ${pillTurn(me.joueurId)}`;
-    top.innerHTML = `${pOpp?.username || 'Partenaire'} ${pillTurn(pOpp?.joueurId)}`;
-    left.innerHTML = `${pLeft?.username || 'Adversaire A'} ${pillTurn(pLeft?.joueurId)}`;
-    right.innerHTML = `${pRight?.username || 'Adversaire B'} ${pillTurn(pRight?.joueurId)}`;
+    bottom.innerHTML = `${me.username || 'Moi'} ${pillTurn(me.joueurId)} ${pillBelote(me.joueurId)}`;
+    top.innerHTML = `${pOpp?.username || 'Partenaire'} ${pillTurn(pOpp?.joueurId)} ${pillBelote(pOpp?.joueurId)}`;
+    left.innerHTML = `${pLeft?.username || 'Adversaire A'} ${pillTurn(pLeft?.joueurId)} ${pillBelote(pLeft?.joueurId)}`;
+    right.innerHTML = `${pRight?.username || 'Adversaire B'} ${pillTurn(pRight?.joueurId)} ${pillBelote(pRight?.joueurId)}`;
   }
 
   // ---------- playable helpers ----------
@@ -278,6 +307,8 @@
       log('🎉 joinedPartie', p);
       joueurId = p.joueurId ?? joueurId;
       if (p.mancheId) mancheId = p.mancheId;
+      // nouvelle manche potentielle → reset annonces
+      beloteByPlayer.clear();
       setPills();
       requestLiveScore();
       if (mancheId) socket.emit('bidding:getState', { mancheId }); // synchro initiale
@@ -286,16 +317,29 @@
     // === Enchères ===
     socket.on('bidding:state', (payload) => {
       lastBiddingState = payload;
-      if (!mancheId && payload?.mancheId) { mancheId = payload.mancheId; setPills(); }
-      if (payload.carteRetournee) renderReturned(payload.carteRetournee);
+      // si on reçoit une nouvelle manche par cet event → reset annonces
+      if (payload?.mancheId && payload.mancheId !== mancheId) {
+        mancheId = payload.mancheId;
+        beloteByPlayer.clear();
+        setPills();
+      }
+      if (payload?.joueurActuelId) currentTurnPlayerId = payload.joueurActuelId;
+      if (payload?.carteRetournee) renderReturned(payload.carteRetournee);
 
-      currentTurnPlayerId = payload.joueurActuelId;   // pendant enchères
       setBiddingButtons(payload);
-      renderSeats(payload);
+      renderSeats({ ...payload, joueurActuelId: currentTurnPlayerId });
+
+      currentTurnPlayerId = null
+      playableIds = new Set()
+      renderMyHand(myHand)
     });
 
     socket.on('bidding:ended', (p) => {
       log('✅ Fin enchères', p);
+
+      currentAtoutId = p?.atoutId ?? null;
+      renderAtout()
+
       const btnPass = q('#btn-pass'), btnTake = q('#btn-take'), btnChoose = q('#btn-choose');
       if (btnPass) btnPass.disabled = true;
       if (btnTake) btnTake.disabled = true;
@@ -307,6 +351,18 @@
       requestLiveScore();
       // on attend turn:state ; si ça n’arrive pas tout de suite, on relance la demande de playable
       retryPlayableIfMissing(700);
+    });
+
+    // === Annonces Belote ===
+    socket.on('belote:declared', (p) => {
+      beloteByPlayer.set(p.joueurId, 'belote');
+      log('🟡 Belote !', p);
+      renderSeats({ ...lastBiddingState, joueurActuelId: currentTurnPlayerId });
+    });
+    socket.on('belote:rebelote', (p) => {
+      beloteByPlayer.set(p.joueurId, 'rebelote');
+      log('🟡 Rebelote !', p);
+      renderSeats({ ...lastBiddingState, joueurActuelId: currentTurnPlayerId });
     });
 
     // === Tour de jeu ===
@@ -337,7 +393,12 @@
 
     // === Ma main ===
     socket.on('hand:state', (payload) => {
-      if (payload.mancheId) { mancheId = payload.mancheId; setPills(); }
+      if (payload.mancheId && payload.mancheId !== mancheId) {
+        mancheId = payload.mancheId;
+        // nouvelle manche → reset annonces
+        beloteByPlayer.clear();
+        setPills();
+      }
       myHand = payload.cartes || [];
       renderMyHand(myHand);
 
@@ -364,10 +425,15 @@
     socket.on('score:live', (s) => {
       renderScore(s);
     });
+
     // === Nouvelle donne ===
     socket.on('donne:relancee', (p) => {
       log('🔁 Donne relancée', p);
-      mancheId = p.newMancheId; setPills();
+      mancheId = p.newMancheId;
+      beloteByPlayer.clear(); // reset annonces pour la nouvelle manche
+      setPills();
+      currentAtoutId = null;
+      renderAtout()
       // les mains/état suivront via hand:state + bidding:state
     });
   }
@@ -405,6 +471,7 @@
     socket.emit('bidding:place', { mancheId, type: 'choose_color', couleurAtoutId });
     log('➡️ bidding:place choose_color', { mancheId, couleurAtoutId });
   });
+
   function getSeatsArr() {
     return Array.isArray(lastBiddingState?.seats) ? lastBiddingState.seats : null;
   }
@@ -456,7 +523,6 @@
       cards.forEach(pc => host.appendChild(cardEl(pc.carte, true)));
     }
   }
-
 
   // auto-join au chargement
   window.addEventListener('DOMContentLoaded', connectAndJoin);

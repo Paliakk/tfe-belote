@@ -184,11 +184,55 @@
       opacity: .4;
       cursor: not-allowed
     }
+
+    #trick-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      /* pas de clics bloqués */
+      z-index: 2;
+      /* au-dessus du centre */
+    }
+
+    .trick-slot {
+      position: absolute;
+      width: var(--card-w);
+      height: var(--card-h);
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Positions : centre-top, centre-right, centre-bottom, centre-left */
+    #trick-n {
+      left: 410px;
+      top: 140px;
+    }
+
+    #trick-e {
+      left: 640px;
+      top: 260px;
+    }
+
+    #trick-s {
+      left: 410px;
+      top: 390px;
+    }
+
+    #trick-w {
+      left: 180px;
+      top: 260px;
+    }
   </style>
 </head>
 
 <body>
-  <h1>Belote – Table <span id="partie-pill" class="pill"></span> <span id="manche-pill" class="pill"></span></h1>
+  <h1>Belote – Table 
+    <span id="partie-pill" class="pill"></span> 
+    <span id="manche-pill" class="pill"></span>
+    <span id="atout-pill" class="pill"></span>
+  </h1>
 
   <div class="row btns">
     <button id="btn-pass">🙅 Pass</button>
@@ -207,6 +251,13 @@
     <div id="center">
       <div id="returned"></div>
       <div id="trick"></div>
+    </div>
+
+    <div id="trick-grid">
+      <div id="trick-n" class="trick-slot"></div>
+      <div id="trick-e" class="trick-slot"></div>
+      <div id="trick-s" class="trick-slot"></div>
+      <div id="trick-w" class="trick-slot"></div>
     </div>
   </div>
   <!-- Dernier pli (hors tapis) -->
