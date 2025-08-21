@@ -116,7 +116,7 @@
       const canPlay = myTurn && playableIds.has(c.id);
       if (canPlay) {
         el.classList.add('hoverable');
-        attachCardHandlers(el,c)
+        attachCardHandlers(el, c)
       } else {
         el.classList.add('disabled')
       }
@@ -124,16 +124,26 @@
     });
   }
 
-  let lastTrickSnapshot = null; // pour l'historique
-
-  function renderLastTrick(trick) {
+  // -- rendu dernier pli (mini cartes)
+  function renderLastTrick(payload) {
+    // payload attendu: { cartes: [{ ordre, joueurId, carte:{ id, valeur, couleurId } }], gagnantId? }
     const host = q('#last-trick'); if (!host) return;
     host.innerHTML = '';
-    if (!trick || !Array.isArray(trick.cartes)) return;
-    // on affiche les 4 cartes du pli précédent en petit
-    trick.cartes
-      .sort((a, b) => a.ordre - b.ordre)
-      .forEach(pc => host.appendChild(cardEl(pc.carte, true)));
+    const cards = Array.isArray(payload?.cartes) ? payload.cartes.slice().sort((a, b) => a.ordre - b.ordre) : [];
+    cards.forEach(pc => host.appendChild(cardEl(pc.carte, true)));
+  }
+
+  // -- rendu score live
+  function renderScore(s) {
+    // s attendu: { mancheId, team1, team2 }
+    const s1 = q('#score1'), s2 = q('#score2');
+    if (s1) s1.textContent = String(s?.team1 ?? 0);
+    if (s2) s2.textContent = String(s?.team2 ?? 0);
+  }
+
+  // -- demander le score au besoin
+  function requestLiveScore() {
+    if (socket?.connected && mancheId) socket.emit('score:getLive', { mancheId });
   }
 
   /**
@@ -218,11 +228,9 @@
   }
   function posForJoueur(joueurId) {
     if (!lastSeats || mySeatIdx == null) return 'top';
-    // place “moi” en bottom, et tourne les autres
     const s = lastSeats.find(x => x.joueurId === joueurId);
     if (!s) return 'top';
-    const delta = (s.seat - mySeatIndex + 4) % 4;
-    // 0 -> bottom, 1 -> right, 2 -> top, 3 -> left
+    const delta = (s.seat - mySeatIdx + 4) % 4; // <- mySeatIdx (fix)
     return ['bottom', 'right', 'top', 'left'][delta];
   }
 
@@ -271,6 +279,7 @@
       joueurId = p.joueurId ?? joueurId;
       if (p.mancheId) mancheId = p.mancheId;
       setPills();
+      requestLiveScore();
       if (mancheId) socket.emit('bidding:getState', { mancheId }); // synchro initiale
     });
 
@@ -295,7 +304,7 @@
       // on retire la carte retournée
       const returned = q('#returned');
       if (returned) returned.innerHTML = '';
-
+      requestLiveScore();
       // on attend turn:state ; si ça n’arrive pas tout de suite, on relance la demande de playable
       retryPlayableIfMissing(700);
     });
@@ -344,9 +353,17 @@
         last.innerHTML = '';
         (p.cartes || []).forEach(pc => last.appendChild(cardEl(pc.carte, true)));
       }
-      clearTrickSlots();
+      clearTrick();
+    });
+    // Pli fermé -> afficher le dernier pli
+    socket.on('trick:closed', (p) => {
+      renderLastTrick(p);
     });
 
+    // Score live (reçu après chaque pli, et à la demande)
+    socket.on('score:live', (s) => {
+      renderScore(s);
+    });
     // === Nouvelle donne ===
     socket.on('donne:relancee', (p) => {
       log('🔁 Donne relancée', p);
@@ -408,19 +425,36 @@
     return ['s', 'e', 'n', 'w'][diff]; // 0=moi(s),1=à droite(e),2=en face(n),3=à gauche(w)
   }
 
-  function clearTrickSlots() {
-    ['n', 'e', 's', 'w'].forEach(dir => { const el = q('#trick-' + dir); if (el) el.innerHTML = ''; });
+  function clearTrick() {
+    // vide les 4 slots s'ils existent
+    ['n', 'e', 's', 'w'].forEach(dir => {
+      const el = q('#trick-' + dir);
+      if (el) el.innerHTML = '';
+    });
+    // vide aussi le fallback plat #trick
+    const flat = q('#trick');
+    if (flat) flat.innerHTML = '';
   }
 
   function renderTrick(trick) {
-    // trick = { cartes: [{ ordre, joueurId, carte:{id,valeur,couleurId} }], ... }
-    clearTrickSlots();
+    clearTrick();
     if (!trick || !Array.isArray(trick.cartes)) return;
 
-    trick.cartes.forEach(pc => {
-      const slot = q('#trick-' + relativeSlotOfPlayer(pc.joueurId));
-      if (slot) slot.appendChild(cardEl(pc.carte, true));
-    });
+    // mode "grid" (4 slots) dispo ?
+    const hasGrid = !!(q('#trick-n') || q('#trick-e') || q('#trick-s') || q('#trick-w'));
+    const cards = trick.cartes.slice().sort((a, b) => a.ordre - b.ordre);
+
+    if (hasGrid) {
+      // place chaque carte devant le joueur qui l'a posée
+      cards.forEach(pc => {
+        const slot = q('#trick-' + relativeSlotOfPlayer(pc.joueurId));
+        (slot || q('#trick')).appendChild(cardEl(pc.carte, true));
+      });
+    } else {
+      // fallback: une ligne centrale #trick
+      const host = q('#trick');
+      cards.forEach(pc => host.appendChild(cardEl(pc.carte, true)));
+    }
   }
 
 

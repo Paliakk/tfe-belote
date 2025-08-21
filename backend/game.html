@@ -121,12 +121,14 @@
       position: relative;
       cursor: default;
     }
+
     .card.hoverable:hover {
       transform: scale(1.08) translateY(-6px);
-      box-shadow: 0 6px 18px rgba(0,0,0,35);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 35);
       cursor: pointer;
     }
-    .card.disabled{
+
+    .card.disabled {
       opacity: .45;
       filter: grayscale(70%);
       cursor: not-allowed;
@@ -207,7 +209,26 @@
       <div id="trick"></div>
     </div>
   </div>
+  <!-- Dernier pli (hors tapis) -->
+  <section id="last-trick-wrap" style="width:820px;margin:10px auto 0;">
+    <h3 style="color:#fff;margin:0 0 6px;">Dernier pli</h3>
+    <div id="last-trick" style="
+    display:flex;gap:8px;align-items:center;justify-content:center;
+    min-height:110px;opacity:.95;"></div>
+  </section>
 
+  <!-- Score live -->
+  <section id="scoreboard" style="
+  width:820px;margin:14px auto 0;display:flex;gap:12px;justify-content:center;">
+    <div class="team" style="
+    background:#ffffffee;padding:6px 10px;border-radius:10px;min-width:150px;text-align:center;">
+      Équipe 1 : <strong id="score1">0</strong>
+    </div>
+    <div class="team" style="
+    background:#ffffffee;padding:6px 10px;border-radius:10px;min-width:150px;text-align:center;">
+      Équipe 2 : <strong id="score2">0</strong>
+    </div>
+  </section>
   <h3 style="color:#fff">Ma main</h3>
   <div id="my-hand"></div>
 
