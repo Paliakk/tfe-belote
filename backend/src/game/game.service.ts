@@ -1,9 +1,11 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { LobbyService } from 'src/lobby/lobby.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
 
 @Injectable()
 export class GameService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService,private readonly lobbyService:LobbyService,private readonly rt:RealtimeService) { }
 
     async quitGame(partieId: number, joueurId: number) {
         return this.prisma.$transaction(async (tx) => {
@@ -42,5 +44,12 @@ export class GameService {
             }
             return { message: `Partie ${partieId} abandonnée par le joueur ${joueurId}` }
         }, { isolationLevel: 'Serializable' })
+    }
+    async onGameOver(partieId: number): Promise<void> {
+        const lobbyId = await this.lobbyService.clearLobbyMembersByPartie(partieId);
+        if (lobbyId) {
+            // informer les clients du lobby qu’il est vidé
+            this.rt.emitToLobby(lobbyId, 'lobby:state', { lobbyId, membres: [] });
+        }
     }
 }

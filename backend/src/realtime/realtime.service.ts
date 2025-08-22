@@ -39,6 +39,9 @@ export class RealtimeService implements OnModuleInit {
   emitLobbyEvent(lobbyId: number, type: 'join' | 'leave', joueur: string) {
     this.server?.to(`lobby-${lobbyId}`).emit('lobby:update', { lobbyId, type, joueur });
   }
+  emitToLobby<T = any>(lobbyId:number,event:string,payload?:T){
+    this.server?.to(`lobby${lobbyId}`).emit(event,payload)
+  }
 
   emitGameStarted(lobbyId: number, partieId: number) {
     this.server?.to(`lobby-${lobbyId}`).emit('lobby:gameStarted', {

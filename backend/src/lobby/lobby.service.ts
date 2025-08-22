@@ -320,4 +320,37 @@ export class LobbyService {
             message: result.message,
         };
     }
+
+    async clearLobbyMembersByPartie(partieId: number): Promise<number | null> {
+        const lobby = await this.prisma.lobby.findUnique({
+            where: { partieId },
+            select: { id: true },
+        });
+        if (!lobby) return null;
+
+        await this.prisma.lobbyJoueur.deleteMany({
+            where: { lobbyId: lobby.id },
+        });
+        return lobby.id;
+    }
+    async resetLobbyAfterGameByPartie(partieId: number) {
+        const lobby = await this.prisma.lobby.findFirst({
+            where: { partieId },
+            select: { id: true },
+        });
+        if (!lobby) return null;
+
+        await this.prisma.$transaction([
+            // on vide les membres
+            this.prisma.lobbyJoueur.deleteMany({ where: { lobbyId: lobby.id } }),
+            // on "libère" le lobby pour une nouvelle partie
+            this.prisma.lobby.update({
+                where: { id: lobby.id },
+                data: { partieId: null, statut: 'en_attente' }, // <- clé du problème
+            }),
+        ]);
+
+        return lobby.id;
+    }
+
 }

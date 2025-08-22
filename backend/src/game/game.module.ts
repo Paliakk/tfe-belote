@@ -6,10 +6,12 @@ import { AuthModule } from 'src/auth/auth.module';
 import { GameGateway } from 'src/gateway/game.gateway';
 import { LobbyModule } from 'src/lobby/lobby.module';
 import { BiddingModule } from 'src/bidding/bidding.module';
+import { RealtimeModule } from 'src/realtime/realtime.module';
 
 @Module({
   controllers: [GameController],
   providers: [GameService],
-  imports:[PrismaModule,AuthModule,LobbyModule,BiddingModule]
+  imports:[PrismaModule,AuthModule,LobbyModule,BiddingModule,RealtimeModule],
+  exports:[GameService]
 })
 export class GameModule {}

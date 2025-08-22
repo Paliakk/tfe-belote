@@ -12,6 +12,7 @@ import { PlayQueriesService } from 'src/play/play.queries';
 import { TrickService } from 'src/play/trick.service';
 import { BiddingService } from 'src/bidding/bidding.service';
 import { subscribe } from 'diagnostics_channel';
+import { GameService } from 'src/game/game.service';
 
 type PlayCardOngoing =
     { message: string; pliNumero: number; cartesDansPli: number; nextPlayerId: number | null; requiresEndOfTrick: boolean; appliedBonuses: string[] };
@@ -35,7 +36,8 @@ export class PlayGateway implements OnGatewayInit {
         private readonly play: PlayService,
         private readonly queries: PlayQueriesService,
         private readonly trick: TrickService,
-        private readonly bidding: BiddingService
+        private readonly bidding: BiddingService,
+        private readonly gameService: GameService
     ) { }
 
     afterInit(server: Server) {
@@ -254,6 +256,7 @@ export class PlayGateway implements OnGatewayInit {
                 // b) Game over ?
                 if (end.gameOver) {
                     this.rt.emitToPartie(partieId, 'game:over', end.gameOver);
+                    await this.gameService.onGameOver(partieId)
                     return { ok: true };
                 }
 
