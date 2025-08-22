@@ -7,11 +7,12 @@ import { RealtimeService } from 'src/realtime/realtime.service';
 import { AuthModule } from 'src/auth/auth.module';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { RealtimeModule } from 'src/realtime/realtime.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   controllers: [LobbyController],
   providers: [LobbyService,PrismaService,RealtimeService,AuthModule],
-  imports:[PrismaModule,RealtimeModule,AuthModule],
+  imports:[PrismaModule,RealtimeModule,AuthModule,UsersModule],
   exports:[LobbyService]
 })
 export class LobbyModule {}

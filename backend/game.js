@@ -346,7 +346,9 @@
       sessionStorage.setItem('auth_token', token);
     }
 
-    socket = io('http://localhost:3000', { auth: { token } });
+    const idToken = sessionStorage.getItem('id_token');
+    socket = io('http://localhost:3000', { auth: { token, id_token: idToken } });
+
 
     // Scoreboard coloré (AJOUT)
     const tBoxes = document.querySelectorAll('#scoreboard .team');
@@ -565,31 +567,50 @@
 
       if (end?.gameOver) return; // le handler game:over s’en charge
     })
+    // === Fin de partie → message + retour lobby ===
     socket.on('game:over', (p) => {
       log('🏆 game:over', p);
       if (navDone) return;
-      navDone = true
+      navDone = true;
+
+      // 1) Message
       const who = p?.winnerTeamNumero ? `Équipe ${p.winnerTeamNumero}` : '—';
       const msg = `Partie terminée. Vainqueur: ${who}  (T1=${p?.totals?.team1 ?? '?'}, T2=${p?.totals?.team2 ?? '?'})`;
-      const target =
-        p?.lobbyUrl ||
-        (p?.lobbyId ? `/lobby?lobbyId=${p.lobbyId}` : null);
-      // geler toute interaction locale
+      alert(msg);
+
+      // 2) Geler l’UI localement
       playableIds = new Set();
       renderMyHand(myHand);
       setBiddingButtons({ preneurId: 1e9 });
 
+      // 3) Construire l’URL du lobby
+      //    - si le backend envoie déjà une URL → on l’utilise
+      //    - sinon, on renvoie vers /backend/lobby.html
+      //    - si lobbyId est fourni → on l’ajoute en query (pratique pour ré‑ouvrir le bon lobby)
+      let targetUrl = null;
+
+      if (p?.lobbyUrl) {
+        // ex. envoyé par le serveur
+        targetUrl = p.lobbyUrl;
+      } else {
+        const url = new URL('/backend/lobby.html', window.location.origin);
+        if (p?.lobbyId) url.searchParams.set('lobbyId', String(p.lobbyId));
+        targetUrl = url.toString();
+      }
+
+      // 4) Sécurité : s’assurer que le token Auth0 reste dispo
+      //    (lobby.html en demandera un nouveau de toute façon ; on garde celui‑ci au cas où)
+      try {
+        const t = sessionStorage.getItem('auth_token');
+        if (!t && p?.token) sessionStorage.setItem('auth_token', p.token);
+      } catch { }
+
+      // 5) Déconnecter proprement le socket puis rediriger
       setTimeout(() => {
-        if (target) {
-          location.replace(target);
-        } else if (document.referrer) {
-          history.back();
-        } else {
-          location.replace('/lobbies');
-        }
-      }, 1500);
-      alert(msg);
-    })
+        try { socket?.disconnect(); } catch { }
+        location.replace(targetUrl);
+      }, 1200);
+    });
   }
 
   // ---------- actions UI (debug enchères) ----------

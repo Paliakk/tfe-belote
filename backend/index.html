@@ -2,204 +2,59 @@
 <html lang="fr">
 
 <head>
-    <base href="./">
-    <meta charset="UTF-8">
-    <title>Test Socket.IO - Belote</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            background: #fafafa;
-            padding: 1em;
-        }
+  <meta charset="UTF-8" />
+  <title>Belote – Connexion</title>
+  <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  connect-src 'self' http://localhost:3000 ws://localhost:3000 https://dev-ic6hqtbqegunpxep.eu.auth0.com;
+  script-src 'self' https://cdn.auth0.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+  frame-src https://dev-ic6hqtbqegunpxep.eu.auth0.com;
+">
+  <link rel="icon" href="data:,">
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: grid;
+      place-items: center;
+      height: 100dvh;
+      background: #0a7b45;
+      color: #fff
+    }
 
-        button {
-            margin: 4px;
-        }
+    .card {
+      background: #ffffff10;
+      border: 1px solid #ffffff33;
+      border-radius: 14px;
+      padding: 24px 28px;
+      min-width: 320px
+    }
 
-        #log {
-            background: #222;
-            color: #0f0;
-            padding: 10px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: monospace;
-            white-space: pre-wrap;
-        }
-
-        #membres-list {
-            margin-top: 1em;
-            padding: 0;
-            list-style: none;
-            border: 1px solid #ccc;
-            max-width: 300px;
-            background: white;
-            min-height: 100px;
-        }
-
-        #membres-list li {
-            padding: 6px 10px;
-            border-bottom: 1px solid #eee;
-        }
-
-        #membres-list li:last-child {
-            border-bottom: none;
-        }
-    </style>
+    button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 0;
+      background: #fff;
+      color: #0a7b45;
+      font-weight: 600;
+      cursor: pointer
+    }
+  </style>
 </head>
 
 <body>
-    <h1>Test WebSocket Belote</h1>
-    <button onclick="connect()">🔐 Se connecter</button>
-    <button onclick="createLobby()">🎲 Créer lobby</button>
-    <button onclick="joinLobbyByName()">Rejoindre par nom</button>
-    <button onclick="leaveLobby()">Quitter lobby</button>
-    <button onclick="startGame()">Lancer la partie</button>
-    <button onclick="chat()">💬 Chat lobby</button>
-    <button onclick="clearLogs()">🧹 Nettoyer logs</button>
+  <div class="card">
+    <h1>Belote – Connexion</h1>
+    <p>Connectez-vous pour accéder au lobby.</p>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button id="btn-login">Se connecter</button>
+    </div>
+  </div>
 
-    <h2>Membres du lobby</h2>
-    <ul id="membres-list"></ul>
-
-    <h2>Logs</h2>
-    <pre id="log"></pre>
-
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script>
-        let socket;
-        let currentLobbyId = null;
-
-        const logEl = () => document.getElementById('log');
-        const listEl = () => document.getElementById('membres-list');
-        const FRONTEND_ORIGIN = window.location.origin;
-
-        function log(msg) {
-            logEl().textContent += msg + '\n';
-            console.log(msg);
-        }
-        function clearLogs() { logEl().textContent = ''; }
-
-        function renderMembers(membres = []) {
-            const el = listEl();
-            el.innerHTML = '';
-            membres.forEach(m => {
-                const li = document.createElement('li');
-                li.textContent = `${m.username} (ID: ${m.id})`;
-                el.appendChild(li);
-            });
-        }
-
-        function attachSocketHandlers() {
-            // ✔︎ Tous les handlers sont attachés après création du socket
-            socket.on('connect', () => log('✅ Connecté au serveur WS'));
-            socket.on('connect_error', err => log('❌ Erreur connexion : ' + err.message));
-
-            socket.on('lobby:joined', ({ lobbyId }) => {
-                currentLobbyId = lobbyId;
-                log(`🎉 Lobby rejoint avec ID: ${currentLobbyId}`);
-            });
-
-            socket.on('lobby:state', ({ lobbyId, membres }) => {
-                currentLobbyId = currentLobbyId ?? lobbyId;
-                log(`📦 State lobby ${lobbyId} — ${membres.length} membre(s)`);
-                renderMembers(membres);
-            });
-
-            socket.on('lobby:update', ({ lobbyId, type, joueur }) => {
-                log(`📢 ${type === 'join' ? '➕' : '➖'} ${joueur} (${type}) dans lobby ${lobbyId}`);
-            });
-
-            socket.on('lobby:closed', ({ lobbyId }) => {
-                log(`🚪 Lobby ${lobbyId} fermé/supprimé`);
-                renderMembers([]);
-                currentLobbyId = null;
-            });
-
-            // Redirections jeu (avec token par onglet)
-            const goToGame = ({ partieId, mancheId }) => {
-                const url = new URL('game.html', window.location.href);
-                url.searchParams.set('partieId', String(partieId));
-                if (mancheId) url.searchParams.set('mancheId', String(mancheId));
-                const t = sessionStorage.getItem('auth_token');
-                if (t) url.searchParams.set('token', t);
-                window.location.assign(url.toString());
-            };
-
-            socket.on('lobby:gameStarted', ({ partieId }) => goToGame({ partieId }));
-            socket.on('partie:started', ({ partieId, mancheId }) => goToGame({ partieId, mancheId }));
-        }
-
-        // ——— Connexion ———
-        function connect() {
-            const token = sessionStorage.getItem('auth_token') || prompt('Entrez votre token Auth0 :');
-            if (!token) { log('❌ Aucun token fourni.'); return; }
-            sessionStorage.setItem('auth_token', token); // token par onglet
-
-            // Crée le socket puis attache les handlers
-            socket = io('http://localhost:3000', { auth: { token } });
-            attachSocketHandlers();
-        }
-
-        // ——— Boutons ———
-        function createLobby() {
-            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
-            const nom = prompt('Nom du lobby à créer ?') || 'Lobby Test';
-            socket.emit('lobby:create', { nom }, (res) => {
-                if (res?.lobbyId) {
-                    currentLobbyId = res.lobbyId;
-                    log(`🎉 Lobby créé: ${currentLobbyId}`);
-                }
-            });
-            log('🔹 Emit lobby:create');
-        }
-
-        function joinLobbyByName() {
-            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
-            const nom = prompt('Nom du lobby ?') || 'test';
-            socket.emit('lobby:joinByName', { nom });
-            log('🔹 Emit lobby:joinByName');
-        }
-
-        function leaveLobby() {
-            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
-            if (!currentLobbyId) return log('⚠️ Aucun lobby en cours.');
-            socket.emit('lobby:leaveRoom', { lobbyId: currentLobbyId });
-            log('🔹 Emit lobby:leaveRoom');
-        }
-
-        function chat() {
-            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
-            if (!currentLobbyId) return log('⚠️ Aucun lobby');
-            const message = prompt('Message à envoyer :');
-            if (!message) return;
-            socket.emit('lobby:chat', { lobbyId: currentLobbyId, message });
-            log('🔹 Emit lobby:chat');
-        }
-
-        function startGame() {
-            if (!socket || !socket.connected) return log('⚠️ Non connecté au WS');
-            const id = currentLobbyId ?? parseInt(prompt('ID du lobby ?'), 10);
-            if (!id) return log('❌ Aucun lobbyId fourni.');
-            const scoreMax = parseInt(prompt('Score max (ex: 301) ?', '301'), 10) || 301;
-            socket.emit('lobby:startGame', { lobbyId: id, scoreMax });
-            log(`🔹 Emit lobby:startGame { lobbyId: ${id}, scoreMax: ${scoreMax} }`);
-        }
-
-        // Expose les fonctions aux boutons
-        window.connect = connect;
-        window.createLobby = createLobby;
-        window.joinLobbyByName = joinLobbyByName;
-        window.leaveLobby = leaveLobby;
-        window.chat = chat;
-        window.clearLogs = clearLogs;
-        window.startGame = startGame;
-
-        // Auto-connect si un token est déjà présent pour cet onglet
-        if (sessionStorage.getItem('auth_token')) {
-            try { connect(); } catch (e) { console.error(e); }
-        }
-    </script>
-
+  <!-- SDK Auth0 -->
+  <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
+  <script src="./login.js"></script>
 </body>
 
 </html>

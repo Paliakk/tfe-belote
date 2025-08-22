@@ -16,26 +16,32 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const issuer = issuerBase();
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      issuer,                                       // e.g. https://xxx.eu.auth0.com/
-      audience: process.env.AUTH0_AUDIENCE,         // https://belote-api
+      issuer,
+      audience: process.env.AUTH0_AUDIENCE, // 'https://belote-api'
       algorithms: ['RS256'],
       secretOrKeyProvider: jwksRsa.passportJwtSecret({
         cache: true,
         rateLimit: true,
         jwksRequestsPerMinute: 10,
-        jwksUri: issuer + '.well-known/jwks.json',  // .../.well-known/jwks.json
+        jwksUri: issuer + '.well-known/jwks.json',
       }),
-      ignoreExpiration: false,
     });
   }
 
   async validate(payload: any) {
+    const NS = 'https://belote-api/claims';
+
+    const email = payload[`${NS}/email`] ?? payload.email ?? null;
+    const name = payload[`${NS}/name`] ?? payload.name ?? null;
+    const nickname = payload[`${NS}/nickname`] ?? payload.nickname ?? null;
+    const picture = payload[`${NS}/picture`] ?? payload.picture ?? null;
+
     return {
-      auth0Sub: payload.sub as string,
-      email: payload.email,
-      name: payload.name,
-      nickname: payload.nickname,
-      picture: payload.picture,
+      auth0Sub: payload.sub as string, // ex: 'auth0|abc...'
+      email,
+      name,
+      nickname,
+      picture,
     };
   }
 }

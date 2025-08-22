@@ -24,7 +24,7 @@ export class LobbyGateway implements OnGatewayInit {
     this.rt.setServer(server);
     console.log('[WS] Gateway afterInit: server set in RealtimeService');
   }
-
+  
   @SubscribeMessage('lobby:create')
   async handleLobbyCreate(
     @MessageBody() data: { nom: string; password?: string },

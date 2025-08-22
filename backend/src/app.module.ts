@@ -13,9 +13,10 @@ import { AuthService } from './auth/auth.service';
 import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, BiddingModule, MancheModule, PlayModule, ScoreModule, AuthModule, RealtimeModule, GatewayModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true}), PrismaModule, LobbyModule, BiddingModule, MancheModule, PlayModule, ScoreModule, AuthModule, RealtimeModule, GatewayModule, UsersModule],
   controllers: [AppController],
   providers: [AppService,AuthService],
 })
