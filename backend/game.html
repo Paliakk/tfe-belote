@@ -17,6 +17,53 @@
     :root {
       --card-w: 70px;
       --card-h: 100px;
+      --team1: #2563eb;
+      --team2: #f59e0b;
+      --team2-bg: #fef3c7;
+      --team1-bg: #dbeafe;
+      /* bleu très clair */
+      --team2-bg: #fef3c7;
+      /* ambre très clair */
+    }
+
+    /* Sièges colorés par équipe */
+    .seat.team1 {
+      box-shadow: inset 0 0 0 2px var(--team1);
+    }
+
+    .seat.team2 {
+      box-shadow: inset 0 0 0 2px var(--team2);
+    }
+
+    /* Anneau de couleur autour des cartes posées (tapis & dernier pli) */
+    .card.team1-ring {
+      box-shadow: 0 0 0 4px var(--team1) inset, 0 2px 6px rgba(0, 0, 0, .35);
+    }
+
+    .card.team2-ring {
+      box-shadow: 0 0 0 4px var(--team2) inset, 0 2px 6px rgba(0, 0, 0, .35);
+    }
+
+    /* Scoreboard courant */
+    #scoreboard .team.t1 {
+      background: var(--team1-bg);
+      border: 1px solid var(--team1);
+    }
+
+    #scoreboard .team.t2 {
+      background: var(--team2-bg);
+      border: 1px solid var(--team2);
+    }
+
+    /* Scoreboard total (💡 manquait) */
+    #scoreboard-total .team.t1 {
+      background: var(--team1-bg);
+      border: 1px solid var(--team1);
+    }
+
+    #scoreboard-total .team.t2 {
+      background: var(--team2-bg);
+      border: 1px solid var(--team2);
     }
 
     body {

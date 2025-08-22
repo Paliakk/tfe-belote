@@ -11,6 +11,7 @@ import { PlayService } from 'src/play/play.service';
 import { PlayQueriesService } from 'src/play/play.queries';
 import { TrickService } from 'src/play/trick.service';
 import { BiddingService } from 'src/bidding/bidding.service';
+import { subscribe } from 'diagnostics_channel';
 
 type PlayCardOngoing =
     { message: string; pliNumero: number; cartesDansPli: number; nextPlayerId: number | null; requiresEndOfTrick: boolean; appliedBonuses: string[] };
@@ -128,14 +129,18 @@ export class PlayGateway implements OnGatewayInit {
 
     // === Demander les cartes jouables pour le joueur courant ===
     @SubscribeMessage('play:getPlayable')
-    async getPlayable(
-        @ConnectedSocket() client: Socket & { user: { sub: number } },
-        @MessageBody() data: { mancheId: number },
-    ) {
+    async getPlayable(@ConnectedSocket() client: Socket & { user: { sub: number } },
+        @MessageBody() data: { mancheId: number }) {
         try {
             const joueurId = client.user.sub;
             const mancheId = data.mancheId;
 
+            // ⛔ garde-fou: pas de jouables tant que pas de preneur
+            const bid = await this.bidding.getState(mancheId);
+            if (!bid?.preneurId) {
+                this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds: [] });
+                return;
+            }
 
             const turn = await this.prisma.manche.findUnique({
                 where: { id: mancheId }, select: { joueurActuelId: true }
@@ -150,18 +155,12 @@ export class PlayGateway implements OnGatewayInit {
                 console.log('[play:getPlayable][fallback]', { mancheId, joueurId, carteIds });
             }
 
-            console.log('[play:getPlayable]', {
-                mancheId, joueurId, isHisTurn, carteIds,
-                rawShape: playableRaw ? Object.keys(playableRaw) : null
-            });
-
             this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds });
         } catch (e: any) {
             console.error('[play:getPlayable] error', e?.message || e);
             client.emit('error', { scope: 'play:getPlayable', message: e?.message ?? 'unexpected error' });
         }
     }
-
     // === Jouer une carte ===
     @SubscribeMessage('play:card')
     async playCard(
@@ -171,6 +170,13 @@ export class PlayGateway implements OnGatewayInit {
         try {
             const joueurId = client.user.sub;
             const { mancheId, carteId } = data;
+
+            // ⛔ garde-fou: pas de jeu de carte tant qu'il n'y a pas de preneur
+            const bid = await this.bidding.getState(mancheId);
+            if (!bid?.preneurId) {
+                client.emit('error', { scope: 'play:card', message: 'Enchères en cours: impossible de jouer une carte.' });
+                return { ok: false, error: 'bidding-not-finished' };
+            }
 
             const res = await this.play.playCard(mancheId, joueurId, carteId);
             const partieId = await this.getPartieIdFromManche(mancheId);
@@ -205,7 +211,8 @@ export class PlayGateway implements OnGatewayInit {
             });
             if (m?.joueurActuelId) {
                 const nextId = m.joueurActuelId;
-                this.rt.emitToPartie(partieId, 'turn:state', { mancheId, joueurActuelId: nextId });
+                const seats = await this.bidding.getSeatsForManche(mancheId)
+                this.rt.emitToPartie(partieId, 'turn:state', { mancheId, joueurActuelId: nextId, seats });
 
                 // Jouables du prochain (avec fallback couleur demandée)
                 const playableNextRaw = await this.queries.getPlayable(mancheId, nextId);
@@ -294,4 +301,70 @@ export class PlayGateway implements OnGatewayInit {
         // envoie le score uniquement à l'appelant
         this.rt.emitToJoueur(client.user.sub, 'score:live', score);
     }
+    @SubscribeMessage('ui:rehydrate')
+    async rehydrate(@ConnectedSocket() client: Socket & { user: { sub: number } },
+        @MessageBody() data: { mancheId: number }) {
+        const joueurId = client.user.sub;
+        const mancheId = data.mancheId;
+
+        const [bid, seats] = await Promise.all([
+            this.bidding.getState(mancheId),
+            this.bidding.getSeatsForManche(mancheId),
+        ]);
+        this.rt.emitToJoueur(joueurId, 'bidding:state', { ...bid, seats });
+        if (bid.preneurId) {
+            this.rt.emitToJoueur(joueurId, 'bidding:ended', {
+                mancheId, preneurId: bid.preneurId, atoutId: bid.atout?.id ?? null,
+            });
+        }
+
+        const turn = await this.prisma.manche.findUnique({
+            where: { id: mancheId }, select: { joueurActuelId: true, beloteJoueurId: true },
+        });
+        this.rt.emitToJoueur(joueurId, 'turn:state', {
+            mancheId, joueurActuelId: turn?.joueurActuelId ?? null,
+        });
+
+        // main
+        const myCards = await this.prisma.main.findMany({
+            where: { mancheId, joueurId, jouee: false },
+            include: { carte: true },
+            orderBy: { id: 'asc' },
+        });
+        this.rt.emitHandTo(joueurId, {
+            mancheId,
+            cartes: myCards.map(m => ({ id: m.carteId, valeur: m.carte.valeur, couleurId: m.carte.couleurId })),
+        });
+
+        // ✅ jouables UNIQUEMENT si phase de jeu
+        if (bid?.preneurId && turn?.joueurActuelId === joueurId) {
+            const playableRaw = await this.queries.getPlayable(mancheId, joueurId);
+            let carteIds = this.normalizeIds(playableRaw);
+            if (carteIds.length === 0) {
+                carteIds = await this.computePlayableFallback(mancheId, joueurId);
+            }
+            this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds });
+        }
+
+        // tapis / dernier pli / score (ok même pendant enchères, si vide ça n’affiche rien)
+        const trick = await this.queries.getActiveTrick(mancheId);
+        if (trick) this.rt.emitToJoueur(joueurId, 'trick:state', trick);
+
+        const prev = await this.trick.previousTrick(mancheId);
+        if (prev?.cartes?.length) {
+            this.rt.emitToJoueur(joueurId, 'trick:closed', {
+                cartes: prev.cartes, gagnantId: prev.gagnantId, numero: prev.numero,
+            });
+        }
+
+        const live = await this.trick.scoreLive(mancheId);
+        this.rt.emitToJoueur(joueurId, 'score:live', live);
+
+        if (turn?.beloteJoueurId) {
+            this.rt.emitToJoueur(joueurId, 'belote:declared', { mancheId, joueurId: turn.beloteJoueurId });
+        }
+
+        return { ok: true };
+    }
+
 }

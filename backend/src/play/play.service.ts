@@ -102,6 +102,8 @@ export class PlayService {
                 where: { joueurId, mancheId, carteId, jouee: false },
                 data: { jouee: true }
             });
+            // 🔒 Idempotent : s’assure qu’on marque belote si le duo Roi&Dame d’atout est désormais complété
+            await this.mancheService.markBeloteIfNeeded(mancheId, joueurId, tx);
             // Helpers
             const norm = (v: string) => v.trim().toLowerCase();
             const isK = (v: string) => ['roi', 'k'].includes(norm(v));

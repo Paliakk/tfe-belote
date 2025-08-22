@@ -23,6 +23,8 @@ export class BiddingService {
             }
         })
         if (!manche) throw new NotFoundException(`Manche ${mancheId} introuvable.`)
+        
+        const seats = await this.getSeatsForManche(mancheId);
 
         return {
             mancheId,
@@ -38,7 +40,8 @@ export class BiddingService {
                 type: e.enchereType,
                 couleurAtoutId: e.couleurAtoutId ?? null,
                 at: e.createdAt
-            }))
+            })),
+            seats
         }
     }
     // Action

@@ -71,6 +71,7 @@
   }
 
   // ---------- état ----------
+  let isPlayingPhase = false; // false = enchères, true = phase de jeu
   let socket;
   let token = null;
   let joueurId = null;
@@ -79,6 +80,7 @@
   let booted = false;
   let lastSeats = null;       // [{seat, joueurId, username}]
   let mySeatIdx = null;       // 0..3 dans lastSeats
+  let navDone = false
 
   // enchères / tour
   let lastBiddingState = null;
@@ -101,9 +103,22 @@
 
   // ---------- rendu ----------
   function setBiddingButtons(state) {
-    const meToPlay = state?.joueurActuelId === joueurId;
     const btnPass = q('#btn-pass'), btnTake = q('#btn-take'), btnChoose = q('#btn-choose');
     if (!btnPass || !btnTake || !btnChoose) return;
+
+    // 👉 enchères ouvertes uniquement si pas de preneur
+    const biddingOpen = !state?.preneurId;
+
+    if (!biddingOpen) {
+      // phase de JEU → on force tout en disabled
+      btnPass.disabled = true;
+      btnTake.disabled = true;
+      btnChoose.disabled = true;
+      return;
+    }
+
+    // encore en enchères → on respecte le tour & le tourActuel
+    const meToPlay = state?.joueurActuelId === joueurId;
     btnPass.disabled = !meToPlay;
     btnTake.disabled = !meToPlay || state?.tourActuel !== 1;
     btnChoose.disabled = !meToPlay || state?.tourActuel !== 2;
@@ -120,6 +135,7 @@
   }
 
   function attachCardHandlers(el, c) {
+    if (!isPlayingPhase) return
     if (!isMyTurn()) return;
     if (!playableIds.has(c.id)) return;
 
@@ -141,7 +157,7 @@
 
     list.forEach(c => {
       const el = cardEl(c);
-      const canPlay = myTurn && playableIds.has(c.id);
+      const canPlay = isPlayingPhase && myTurn && playableIds.has(c.id)
       if (canPlay) {
         el.classList.add('hoverable');
         attachCardHandlers(el, c)
@@ -158,7 +174,13 @@
     const host = q('#last-trick'); if (!host) return;
     host.innerHTML = '';
     const cards = Array.isArray(payload?.cartes) ? payload.cartes.slice().sort((a, b) => a.ordre - b.ordre) : [];
-    cards.forEach(pc => host.appendChild(cardEl(pc.carte, true)));
+    // >>> ajout: anneau couleur selon l'équipe du joueur qui a posé la carte
+    cards.forEach(pc => {
+      const el = cardEl(pc.carte, true);
+      const ring = (teamOfJoueur(pc.joueurId) === 1) ? 'team1-ring' : 'team2-ring';
+      el.classList.add(ring);
+      host.appendChild(el);
+    });
   }
 
   // -- rendu score live
@@ -174,10 +196,24 @@
     if (socket?.connected && mancheId) socket.emit('score:getLive', { mancheId });
   }
 
+  // ---------- helpers équipe (AJOUT) ----------
+  // À mettre avant renderSeats pour qu'elles existent lors des appels
+  function teamOfSeatIndex(seat) { return (seat % 2 === 0) ? 1 : 2; }
+  function teamOfJoueur(jid) {
+    if (!lastSeats) return 1;
+    const s = lastSeats.find(x => x.joueurId === jid)?.seat;
+    return (s == null) ? 1 : teamOfSeatIndex(s);
+  }
+
   // seats: on accepte state.seats [{seat, joueurId, username}] OU state.joueurs [{joueurId, username, seat?}]
   function renderSeats(state) {
     const top = q('#seat-top'), right = q('#seat-right'), bottom = q('#seat-bottom'), left = q('#seat-left');
     if (!top || !right || !bottom || !left) return;
+
+    // reset classes couleur équipe (AJOUT)
+    [top, right, bottom, left].forEach(el => {
+      el.classList.remove('team1', 'team2');
+    });
 
     top.innerHTML = right.innerHTML = bottom.innerHTML = left.innerHTML = '';
 
@@ -237,6 +273,12 @@
     const pOpp = seats.find(s => s.seat === seatOpp);
     const pLeft = seats.find(s => s.seat === seatLeft);
 
+    // Applique la classe team1/team2 à chaque siège (AJOUT)
+    bottom.classList.add('team' + teamOfSeatIndex(mySeat));
+    right.classList.add('team' + teamOfSeatIndex(seatRight));
+    top.classList.add('team' + teamOfSeatIndex(seatOpp));
+    left.classList.add('team' + teamOfSeatIndex(seatLeft));
+
     bottom.innerHTML = `${me.username || 'Moi'} ${pillTurn(me.joueurId)} ${pillBelote(me.joueurId)}`;
     top.innerHTML = `${pOpp?.username || 'Partenaire'} ${pillTurn(pOpp?.joueurId)} ${pillBelote(pOpp?.joueurId)}`;
     left.innerHTML = `${pLeft?.username || 'Adversaire A'} ${pillTurn(pLeft?.joueurId)} ${pillBelote(pLeft?.joueurId)}`;
@@ -274,6 +316,7 @@
   }
 
   function requestPlayableIfMyTurn() {
+    if (!isPlayingPhase) return
     if (isMyTurn() && mancheId && socket?.connected) {
       log('➡️ play:getPlayable (my turn)', { mancheId });
       socket.emit('play:getPlayable', { mancheId });
@@ -305,6 +348,15 @@
 
     socket = io('http://localhost:3000', { auth: { token } });
 
+    // Scoreboard coloré (AJOUT)
+    const tBoxes = document.querySelectorAll('#scoreboard .team');
+    if (tBoxes[0]) tBoxes[0].classList.add('t1');
+    if (tBoxes[1]) tBoxes[1].classList.add('t2');
+    // Scoreboard total (AJOUT)
+    const tTot = document.querySelectorAll('#scoreboard-total .team');
+    if (tTot[0]) tTot[0].classList.add('t1');
+    if (tTot[1]) tTot[1].classList.add('t2');
+
     socket.on('connect', () => {
       log('✅ WS connect', { id: socket.id });
       socket.emit('joinPartie', { partieId });
@@ -319,34 +371,55 @@
       if (p.mancheId) mancheId = p.mancheId;
       // nouvelle manche potentielle → reset annonces
       beloteByPlayer.clear();
+      // 🔒 On bloque les boutons tant qu’on n’a pas reçu l’état
+      const btnPass = q('#btn-pass'), btnTake = q('#btn-take'), btnChoose = q('#btn-choose');
+      if (btnPass) btnPass.disabled = true;
+      if (btnTake) btnTake.disabled = true;
+      if (btnChoose) btnChoose.disabled = true;
       setPills();
-      requestLiveScore();
-      if (mancheId) socket.emit('bidding:getState', { mancheId }); // synchro initiale
+      if (mancheId) socket.emit('ui:rehydrate', { mancheId })
+      requestLiveScore();   //Plus nécessaire avec la rehydratation
     });
 
     // === Enchères ===
     socket.on('bidding:state', (payload) => {
       lastBiddingState = payload;
-      // si on reçoit une nouvelle manche par cet event → reset annonces
-      if (payload?.mancheId && payload.mancheId !== mancheId) {
-        mancheId = payload.mancheId;
-        beloteByPlayer.clear();
-        setPills();
+
+      // phase courante
+      isPlayingPhase = !!payload?.preneurId;
+
+      // synchro atout (utile après refresh)
+      if (payload?.atout?.id) {
+        currentAtoutId = payload.atout.id;
+        renderAtout();
       }
-      if (payload?.joueurActuelId) currentTurnPlayerId = payload.joueurActuelId;
-      if (payload?.carteRetournee) renderReturned(payload.carteRetournee);
+
+      const biddingOpen = !payload?.preneurId;
+
+      // carte retournée visible uniquement si enchères ouvertes
+      if (biddingOpen && payload?.carteRetournee) {
+        renderReturned(payload.carteRetournee);
+      } else {
+        const returned = q('#returned'); if (returned) returned.innerHTML = '';
+      }
 
       setBiddingButtons(payload);
+
+      if (payload?.joueurActuelId) currentTurnPlayerId = payload.joueurActuelId;
       renderSeats({ ...payload, joueurActuelId: currentTurnPlayerId });
 
-      currentTurnPlayerId = null
-      playableIds = new Set()
-      renderMyHand(myHand)
+      // 🚫 En phase d’enchères : aucune interaction main
+      if (!isPlayingPhase) {
+        playableIds = new Set();
+        renderMyHand(myHand); // rend tout grisé
+        return;
+      }
     });
+
 
     socket.on('bidding:ended', (p) => {
       log('✅ Fin enchères', p);
-
+      isPlayingPhase = true
       currentAtoutId = p?.atoutId ?? null;
       renderAtout()
 
@@ -359,6 +432,9 @@
       const returned = q('#returned');
       if (returned) returned.innerHTML = '';
       requestLiveScore();
+      if (mancheId && socket?.connected) {
+        socket.emit('play:getPlayable', { mancheId });
+      }
       // on attend turn:state ; si ça n’arrive pas tout de suite, on relance la demande de playable
       retryPlayableIfMissing(700);
     });
@@ -384,7 +460,15 @@
       if (p?.mancheId && mancheId !== p.mancheId) return;
       currentTurnPlayerId = p.joueurActuelId;
 
+
       renderSeats({ ...lastBiddingState, joueurActuelId: currentTurnPlayerId });
+
+      // 🚫 Pas de demande de jouables si on est en enchères
+      if (!isPlayingPhase) {
+        playableIds = new Set();
+        renderMyHand(myHand);
+        return;
+      }
 
       if (isMyTurn()) {
         socket.emit('play:getPlayable', { mancheId });
@@ -396,6 +480,7 @@
 
     // === Cartes jouables (moi) ===
     socket.on('play:playable', (p) => {
+      if (!isPlayingPhase) return
       const ids = Array.isArray(p?.carteIds) ? p.carteIds
         : Array.isArray(p?.cards) ? p.cards.map(c => c.id)
           : Array.isArray(p?.cartes) ? p.cartes.map(c => c.id)
@@ -422,17 +507,23 @@
 
     // === Pli courant (tapis) ===
     socket.on('trick:state', (p) => { renderTrick(p); });
-    // pli fermé → pousser dans #last-trick et vider le tapis
-    socket.on('trick:closed', (p) => {
-      const last = q('#last-trick'); if (last) {
-        last.innerHTML = '';
-        (p.cartes || []).forEach(pc => last.appendChild(cardEl(pc.carte, true)));
-      }
-      clearTrick();
-    });
     // Pli fermé -> afficher le dernier pli
     socket.on('trick:closed', (p) => {
       renderLastTrick(p);
+      if (p && p.numero === 8 && p.gagnantId) {
+        const pos = relativeSlotOfPlayer(p.gagnantId);
+        const slot = q('#trick-' + pos) || q('#trick');
+        if (slot) {
+          const badge = document.createElement('div');
+          badge.className = 'pill';
+          badge.style.background = '#ffeaa7';
+          badge.style.color = '#4d3800';
+          badge.style.marginLeft = '6px';
+          badge.textContent = '+10 (dix de der)';
+          slot.appendChild(badge);
+          setTimeout(() => badge.remove(), 2500);
+        }
+      }
     });
 
     // Score live (reçu après chaque pli, et à la demande)
@@ -448,30 +539,55 @@
       setPills();
       currentAtoutId = null;
       renderAtout()
+      isPlayingPhase = false
       // les mains/état suivront via hand:state + bidding:state
     });
     socket.on('manche:ended', (end) => {
       log('🏁 manche:ended', end);
+      if (end?.cumule) renderTotals(end.cumule.team1, end.cumule.team2);
 
-      // Met à jour le total cumulé renvoyé par UC12
-      if (end?.cumule) {
-        renderTotals(end.cumule.team1, end.cumule.team2);
-      }
+      // 🚀 mini toast recap
+      try {
+        const s = end?.scores;
+        if (s?.scores?.length === 2) {
+          const t1 = s.scores[0], t2 = s.scores[1];
+          const bonus1 = (t1.detailsBonus || []).map(b => `${b.type === 'dix_de_der' ? '10 de der' : b.type} +${b.points}`).join(', ') || '—';
+          const bonus2 = (t2.detailsBonus || []).map(b => `${b.type === 'dix_de_der' ? '10 de der' : b.type} +${b.points}`).join(', ') || '—';
+          showToast(
+            `Fin de manche #${end.mancheId}
+              Équipe 1: ${t1.total}  (base ${t1.pointsBase} ; bonus ${t1.bonus} : ${bonus1})
+              Équipe 2: ${t2.total}  (base ${t2.pointsBase} ; bonus ${t2.bonus} : ${bonus2})
+              Cumuls → E1: ${end.cumule?.team1 ?? '?'} | E2: ${end.cumule?.team2 ?? '?'}`,
+            5200
+          );
+        }
+      } catch { }
 
-      // Si game over, on attend 'game:over' (voir plus bas)
-      if (end?.gameOver) {
-        // rien de spécial ici, le handler 'game:over' fera l’affichage
-        return;
-      }
-
-      // Sinon, UC12 a aussi créé la prochaine manche via end.nextManche
-      // Le gateway doit ensuite émettre 'donne:relancee' + hands + bidding:state (cf. patch PlayGateway)
-      // Ton front les écoute déjà (joined/new hands/bidding etc.)
-    });
+      if (end?.gameOver) return; // le handler game:over s’en charge
+    })
     socket.on('game:over', (p) => {
       log('🏆 game:over', p);
+      if (navDone) return;
+      navDone = true
       const who = p?.winnerTeamNumero ? `Équipe ${p.winnerTeamNumero}` : '—';
       const msg = `Partie terminée. Vainqueur: ${who}  (T1=${p?.totals?.team1 ?? '?'}, T2=${p?.totals?.team2 ?? '?'})`;
+      const target =
+        p?.lobbyUrl ||
+        (p?.lobbyId ? `/lobby?lobbyId=${p.lobbyId}` : null);
+      // geler toute interaction locale
+      playableIds = new Set();
+      renderMyHand(myHand);
+      setBiddingButtons({ preneurId: 1e9 });
+
+      setTimeout(() => {
+        if (target) {
+          location.replace(target);
+        } else if (document.referrer) {
+          history.back();
+        } else {
+          location.replace('/lobbies');
+        }
+      }, 1500);
       alert(msg);
     })
   }
@@ -552,14 +668,38 @@
     if (hasGrid) {
       // place chaque carte devant le joueur qui l'a posée
       cards.forEach(pc => {
+        const el = cardEl(pc.carte, true);                            // AJOUT anneau
+        const ring = (teamOfJoueur(pc.joueurId) === 1) ? 'team1-ring' : 'team2-ring';
+        el.classList.add(ring);
         const slot = q('#trick-' + relativeSlotOfPlayer(pc.joueurId));
-        (slot || q('#trick')).appendChild(cardEl(pc.carte, true));
+        (slot || q('#trick')).appendChild(el);
       });
     } else {
       // fallback: une ligne centrale #trick
       const host = q('#trick');
-      cards.forEach(pc => host.appendChild(cardEl(pc.carte, true)));
+      cards.forEach(pc => {
+        const el = cardEl(pc.carte, true);                            // AJOUT anneau
+        const ring = (teamOfJoueur(pc.joueurId) === 1) ? 'team1-ring' : 'team2-ring';
+        el.classList.add(ring);
+        host.appendChild(el);
+      });
     }
+  }
+  function showToast(msg, ms = 4000) {
+    let el = document.createElement('div');
+    el.style.position = 'fixed';
+    el.style.left = '50%';
+    el.style.bottom = '24px';
+    el.style.transform = 'translateX(-50%)';
+    el.style.background = '#000c';
+    el.style.color = '#fff';
+    el.style.padding = '10px 14px';
+    el.style.borderRadius = '10px';
+    el.style.whiteSpace = 'pre-line';
+    el.style.zIndex = '9999';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.remove(); }, ms);
   }
 
   // auto-join au chargement

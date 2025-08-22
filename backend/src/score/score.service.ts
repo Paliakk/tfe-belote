@@ -129,8 +129,10 @@ export class ScoreService {
             if (preneurTeamNumero) {
                 if (contratReussi === false) {
                     const defenseTeam: 1 | 2 = preneurTeamNumero === 1 ? 2 : 1;
-                    if (defenseTeam === 1) { base1 = 162; base2 = 0; }
-                    else { base1 = 0; base2 = 162; }
+                    // La somme "base" des cartes = 152 (pas 162). Le "dix_de_der" reste un BONUS.
+                    const MAX_BASE = pointsBaseByTeam[1] + pointsBaseByTeam[2]; // normalement 152
+                    if (defenseTeam === 1) { base1 = MAX_BASE; base2 = 0; }
+                    else { base1 = 0; base2 = MAX_BASE; }
                 }
             }
 

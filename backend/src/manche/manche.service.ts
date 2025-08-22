@@ -31,6 +31,29 @@ export class MancheService {
             throw e;
         }
     }
+    private normalizeDixDeDer(payload: ScoreResultDto): ScoreResultDto {
+        // Corrige un score individuel si le +10 a été mis dans la base
+        const fix = (s: ScoreResultDto['scores'][number]) => {
+            const dixBonus = (s.detailsBonus || [])
+                .filter(b => (b.type as any) === 'dix_de_der')
+                .reduce((sum, b) => sum + (b.points ?? 0), 0);
+
+            if (dixBonus <= 0) return s;
+
+            // Si la base contient le +10, alors base + bonus == total + 10
+            const baseInclutDix = (s.pointsBase + s.bonus) === (s.total + dixBonus);
+
+            const pointsBaseCorr = baseInclutDix ? Math.max(0, s.pointsBase - dixBonus) : s.pointsBase;
+            const totalCorr = pointsBaseCorr + s.bonus; // toujours base + bonus
+
+            return { ...s, pointsBase: pointsBaseCorr, total: totalCorr };
+        };
+
+        // Garantir exactement 2 entrées (tuple) pour satisfaire ScoreResultDto
+        const [s1, s2] = payload.scores;
+        const fixed: typeof payload.scores = [fix(s1), fix(s2)];
+        return { ...payload, scores: fixed };
+    }
 
     async relancerMancheByMancheId(mancheId: number) {
         await this.partieGuard.ensureEnCoursByMancheId(mancheId)
@@ -206,9 +229,11 @@ export class MancheService {
                         bonusAppliques: Array.from(new Set((team1.bonus || []).concat(team2.bonus || []).map(b => b.type))) as any,
                         scoreMancheIds: [team1.id, team2.id],
                     };
+                    scorePayload = this.normalizeDixDeDer(scorePayload);
                 } else {
                     // Calculer les scores définitifs via UC09
                     scorePayload = await this.score.calculateScoresForManche(mancheId);
+                    scorePayload = this.normalizeDixDeDer(scorePayload);
                 }
 
                 // Marquer 'terminee' si ce n'est pas déjà le cas
@@ -237,6 +262,11 @@ export class MancheService {
                 let shouldEndGame = false;
                 let winnerTeamNumero: 1 | 2 | undefined;
                 let reason: 'reach_threshold' | 'tie_over_threshold' | undefined;
+                //Récupérer le lobby lié à la partie 
+                const lobby = await tx.lobby.findFirst({
+                    where: { partieId: manche.partieId },
+                    select: { id: true },
+                });
 
                 if (t1 >= 301 || t2 >= 301) {
                     if (t1 === t2) {
@@ -343,6 +373,7 @@ export class MancheService {
                             partieId: manche.partieId,
                             winnerTeamNumero,
                             totals: { team1: t1, team2: t2 },
+                            lobbyId: lobby?.id ?? null
                         }
                         : null,
                 }
