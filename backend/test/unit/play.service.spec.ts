@@ -47,7 +47,14 @@ describe('PlayService (unit)', () => {
    * - 4 sièges (1..4), joueurActuel = 1
    * - 1er pli existant (contenu paramétrable)
    */
-  function makeManche({ trickCards = [] as Array<{ id: number; ordre: number; joueurId: number; carte: any }> } = {}) {
+  function makeManche({
+    trickCards = [] as Array<{
+      id: number;
+      ordre: number;
+      joueurId: number;
+      carte: any;
+    }>,
+  } = {}) {
     return {
       id: 1,
       joueurActuelId: 1,
@@ -59,8 +66,18 @@ describe('PlayService (unit)', () => {
       ],
       partie: {
         equipes: [
-          { joueurs: [{ ordreSiege: 0, joueurId: 1 }, { ordreSiege: 2, joueurId: 3 }] },
-          { joueurs: [{ ordreSiege: 1, joueurId: 2 }, { ordreSiege: 3, joueurId: 4 }] },
+          {
+            joueurs: [
+              { ordreSiege: 0, joueurId: 1 },
+              { ordreSiege: 2, joueurId: 3 },
+            ],
+          },
+          {
+            joueurs: [
+              { ordreSiege: 1, joueurId: 2 },
+              { ordreSiege: 3, joueurId: 4 },
+            ],
+          },
         ],
       },
       plis: [
@@ -87,8 +104,8 @@ describe('PlayService (unit)', () => {
     nextPlayerExpected,
   }: {
     manche: any;
-    beforeCountInTrick: number;  // nb de cartes avant le coup
-    afterCountInTrick: number;   // nb de cartes après le coup
+    beforeCountInTrick: number; // nb de cartes avant le coup
+    afterCountInTrick: number; // nb de cartes après le coup
     pliCarteOwnerById?: Record<number, number>;
     nextPlayerExpected?: number | null;
   }) {
@@ -99,7 +116,11 @@ describe('PlayService (unit)', () => {
 
     const pliModel = {
       // si le dernier pli est “plein” ou inexistant, le service peut créer un nouveau pli
-      create: jest.fn().mockResolvedValue({ id: 600, numero: (manche.plis?.length || 0) + 1, cartes: [] }),
+      create: jest.fn().mockResolvedValue({
+        id: 600,
+        numero: (manche.plis?.length || 0) + 1,
+        cartes: [],
+      }),
       findUnique: jest.fn().mockResolvedValue({
         id: manche.plis[0].id,
         numero: manche.plis[0].numero,
@@ -143,7 +164,11 @@ describe('PlayService (unit)', () => {
         if (nextPlayerExpected == null) {
           expect(mancheModel.update).not.toHaveBeenCalledWith(
             expect.anything(),
-            expect.objectContaining({ data: expect.objectContaining({ joueurActuelId: expect.any(Number) }) }),
+            expect.objectContaining({
+              data: expect.objectContaining({
+                joueurActuelId: expect.any(Number),
+              }),
+            }),
           );
         } else {
           // ✅ Prisma.update reçoit un seul objet { where, data }
@@ -151,7 +176,7 @@ describe('PlayService (unit)', () => {
             expect.objectContaining({
               where: { id: manche.id },
               data: { joueurActuelId: nextPlayerExpected },
-            })
+            }),
           );
         }
       },
@@ -166,7 +191,7 @@ describe('PlayService (unit)', () => {
       beforeCountInTrick: 0,
       afterCountInTrick: 1,
       pliCarteOwnerById: {}, // aucun pc présent avant -> rien à résoudre
-      nextPlayerExpected: 2,  // seats 0..3 => après joueur 1 vient joueur 2
+      nextPlayerExpected: 2, // seats 0..3 => après joueur 1 vient joueur 2
     });
 
     // isPlayable -> true
@@ -191,9 +216,24 @@ describe('PlayService (unit)', () => {
     // Pli avant coup : 3 cartes -> après : 4 cartes (complet)
     // On fournit des ids de pliCarte “existants” pour que findPlayerIdByPliCarte() puisse résoudre les joueurs
     const trickCards = [
-      { id: 100, ordre: 0, joueurId: 4, carte: { id: 21, valeur: 'Roi', couleurId: 1 } },
-      { id: 101, ordre: 1, joueurId: 2, carte: { id: 22, valeur: 'Dame', couleurId: 1 } },
-      { id: 102, ordre: 2, joueurId: 3, carte: { id: 23, valeur: 'Valet', couleurId: 1 } },
+      {
+        id: 100,
+        ordre: 0,
+        joueurId: 4,
+        carte: { id: 21, valeur: 'Roi', couleurId: 1 },
+      },
+      {
+        id: 101,
+        ordre: 1,
+        joueurId: 2,
+        carte: { id: 22, valeur: 'Dame', couleurId: 1 },
+      },
+      {
+        id: 102,
+        ordre: 2,
+        joueurId: 3,
+        carte: { id: 23, valeur: 'Valet', couleurId: 1 },
+      },
     ];
     const m = makeManche({ trickCards });
     wirePrismaForScenario({

@@ -1,6 +1,10 @@
 import {
-  ConnectedSocket, MessageBody, OnGatewayInit, SubscribeMessage,
-  WebSocketGateway, WebSocketServer,
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { UseGuards } from '@nestjs/common';
@@ -8,7 +12,7 @@ import { AuthGuardSocket } from 'src/auth/auth-socket.guard';
 import { JwtPayload } from 'src/auth/jwt.strategy';
 import { RealtimeService } from 'src/realtime/realtime.service';
 import { LobbyService } from 'src/lobby/lobby.service';
-import { GameEvent, JoinedPartiePayload } from 'src/realtime/game-event';
+import { GameEvent, JoinedPartiePayload } from 'src/realtime/ws-events';
 
 @WebSocketGateway({ cors: true })
 @UseGuards(AuthGuardSocket)
@@ -24,7 +28,7 @@ export class LobbyGateway implements OnGatewayInit {
     this.rt.setServer(server);
     console.log('[WS] Gateway afterInit: server set in RealtimeService');
   }
-  
+
   @SubscribeMessage('lobby:create')
   async handleLobbyCreate(
     @MessageBody() data: { nom: string; password?: string },
@@ -38,7 +42,9 @@ export class LobbyGateway implements OnGatewayInit {
     client.emit('lobby:joined', { lobbyId: lobby.id });
 
     // état initial pour tous
-    const members = [{ id: client.user.sub, username: lobby.createur.username }];
+    const members = [
+      { id: client.user.sub, username: lobby.createur.username },
+    ];
     this.rt.emitLobbyState(lobby.id, members);
 
     return {
@@ -65,7 +71,11 @@ export class LobbyGateway implements OnGatewayInit {
     this.rt.emitLobbyEvent(lobby.id, 'join', client.user.username);
     this.rt.emitLobbyState(lobby.id, lobby.membres);
 
-    return { message: `Rejoint le lobby ${lobby.nom}`, lobbyId: lobby.id, membres: lobby.membres };
+    return {
+      message: `Rejoint le lobby ${lobby.nom}`,
+      lobbyId: lobby.id,
+      membres: lobby.membres,
+    };
   }
 
   @SubscribeMessage('lobby:joinRoom')
@@ -73,7 +83,10 @@ export class LobbyGateway implements OnGatewayInit {
     @ConnectedSocket() client: Socket & { user: JwtPayload },
     @MessageBody() data: { lobbyId: number; password?: string },
   ) {
-    const lobby = await this.lobbyService.join({ lobbyId: data.lobbyId, password: data.password }, client.user.sub);
+    const lobby = await this.lobbyService.join(
+      { lobbyId: data.lobbyId, password: data.password },
+      client.user.sub,
+    );
     client.join(`lobby-${lobby.id}`);
     this.rt.registerClient(client, client.user.sub);
     client.emit('lobby:joined', { lobbyId: lobby.id });
@@ -121,10 +134,14 @@ export class LobbyGateway implements OnGatewayInit {
   ) {
     const joueurId = client.user.sub;
     const { lobbyId, scoreMax } = data;
-    const result = await this.lobbyService.startGame(lobbyId, joueurId, scoreMax);
+    const result = await this.lobbyService.startGame(
+      lobbyId,
+      joueurId,
+      scoreMax,
+    );
 
     // notifier tout le monde et pousser l’URL de redirection
-    this.rt.emitGameStarted(lobbyId, result.partie.id)
+    this.rt.emitGameStarted(lobbyId, result.partie.id);
 
     return result;
   }

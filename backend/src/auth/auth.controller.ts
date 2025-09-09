@@ -7,10 +7,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 @UseGuards(JwtAuthGuard, EnsureJoueurGuard)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly prisma: PrismaService) { }
-
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get('me')
-  me(@Req() req: any) { return { ok: true, joueurId: req.user.joueurId }; }
-
+  me(@Req() req: any) {
+    return { ok: true, joueurId: req.user.joueurId };
+  }
 }

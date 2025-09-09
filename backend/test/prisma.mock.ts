@@ -1,4 +1,7 @@
-export type MockFn<T extends (...a: any[]) => any> = jest.Mock<ReturnType<T>, Parameters<T>>;
+export type MockFn<T extends (...a: any[]) => any> = jest.Mock<
+  ReturnType<T>,
+  Parameters<T>
+>;
 
 export function createMockPrisma() {
   return {

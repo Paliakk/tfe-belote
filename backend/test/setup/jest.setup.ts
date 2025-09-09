@@ -3,9 +3,12 @@ import 'reflect-metadata';
 
 // ✅ Mock léger d'AuthGuard pour nos tests
 jest.mock('@nestjs/passport', () => ({
-  AuthGuard: () => class MockAuthGuard {
-    canActivate() { return true; }
-  },
+  AuthGuard: () =>
+    class MockAuthGuard {
+      canActivate() {
+        return true;
+      }
+    },
 }));
 
 // ✅ Ne tente de mocker @nestjs/throttler que s'il est installé
@@ -14,7 +17,9 @@ try {
   require.resolve('@nestjs/throttler');
   jest.mock('@nestjs/throttler', () => ({
     ThrottlerGuard: class {
-      canActivate() { return true; }
+      canActivate() {
+        return true;
+      }
     },
   }));
 } catch {

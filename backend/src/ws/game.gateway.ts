@@ -1,6 +1,11 @@
 // src/game/game.gateway.ts
 import {
-  ConnectedSocket, MessageBody, OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer,
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { UseGuards, NotFoundException } from '@nestjs/common';
@@ -19,7 +24,7 @@ export class GameGateway implements OnGatewayInit {
     private readonly lobbyService: LobbyService,
     private readonly biddingService: BiddingService,
     private readonly prisma: PrismaService,
-  ) { }
+  ) {}
   afterInit(server: Server) {
     this.rt.setServer(server);
     console.log('[WS] Gateway afterInit: server set in RealtimeService');
@@ -27,16 +32,23 @@ export class GameGateway implements OnGatewayInit {
 
   @SubscribeMessage('joinPartie')
   async joinPartie(
-    @ConnectedSocket() client: Socket & { user: { sub: number; username?: string } },
+    @ConnectedSocket()
+    client: Socket & { user: { sub: number; username?: string } },
     @MessageBody() data: { partieId: number },
   ) {
     const joueurId = client.user.sub;
     const { partieId } = data;
 
     // ✅ Vérifie l’appartenance du joueur à la partie
-    const info = await this.lobbyService.findPartieWithEquipe(partieId, joueurId);
+    const info = await this.lobbyService.findPartieWithEquipe(
+      partieId,
+      joueurId,
+    );
     const mancheId = info.partie.mancheCourante?.id ?? null;
-    if (!mancheId) throw new NotFoundException(`Aucune manche active pour la partie ${partieId}.`);
+    if (!mancheId)
+      throw new NotFoundException(
+        `Aucune manche active pour la partie ${partieId}.`,
+      );
 
     // Room + registre le client pour les envois ciblés
     client.join(`partie-${partieId}`);
@@ -56,7 +68,7 @@ export class GameGateway implements OnGatewayInit {
       mancheId: st.mancheId,
       joueurActuelId: st.joueurActuelId,
       tourActuel: st.tourActuel as 1 | 2,
-      encheres: st.historique.map(e => ({
+      encheres: st.historique.map((e) => ({
         joueurId: e.joueur.id,
         type: e.type,
         couleurAtoutId: e.couleurAtoutId ?? undefined,
@@ -68,7 +80,7 @@ export class GameGateway implements OnGatewayInit {
       mancheId: st.mancheId,
       joueurActuelId: st.joueurActuelId,
       tourActuel: st.tourActuel as 1 | 2,
-      encheres: st.historique.map(e => ({
+      encheres: st.historique.map((e) => ({
         joueurId: e.joueur.id,
         type: e.type,
         couleurAtoutId: e.couleurAtoutId ?? undefined,
@@ -76,7 +88,11 @@ export class GameGateway implements OnGatewayInit {
         createdAt: e.at.toISOString(),
       })),
       carteRetournee: st.carteRetournee
-        ? { id: st.carteRetournee.id, valeur: st.carteRetournee.valeur, couleurId: st.carteRetournee.couleurId }
+        ? {
+            id: st.carteRetournee.id,
+            valeur: st.carteRetournee.valeur,
+            couleurId: st.carteRetournee.couleurId,
+          }
         : null,
     });
 
@@ -88,7 +104,11 @@ export class GameGateway implements OnGatewayInit {
     });
     this.rt.emitHandTo(joueurId, {
       mancheId,
-      cartes: hand.map(m => ({ id: m.carteId, valeur: m.carte.valeur, couleurId: m.carte.couleurId })),
+      cartes: hand.map((m) => ({
+        id: m.carteId,
+        valeur: m.carte.valeur,
+        couleurId: m.carte.couleurId,
+      })),
     });
 
     return { success: true };

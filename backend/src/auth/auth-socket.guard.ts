@@ -4,7 +4,9 @@ import { Socket } from 'socket.io';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UsersService } from 'src/users/users.service';
 
-type WsAuthed = Socket & { user?: { sub: number; username?: string; email?: string } };
+type WsAuthed = Socket & {
+  user?: { sub: number; username?: string; email?: string };
+};
 
 @Injectable()
 export class AuthGuardSocket implements CanActivate {
@@ -12,7 +14,7 @@ export class AuthGuardSocket implements CanActivate {
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
-  ) { }
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const client: Socket = context.switchToWs().getClient<Socket>();
@@ -25,8 +27,8 @@ export class AuthGuardSocket implements CanActivate {
       return false;
     }
 
-    const it = idToken ? (this.jwtService.decode(idToken) as any || {}) : {};
-    const at = accessToken ? (this.jwtService.decode(accessToken) as any || {}) : {};
+    const it = idToken ? this.jwtService.decode(idToken) || {} : {};
+    const at = accessToken ? this.jwtService.decode(accessToken) || {} : {};
 
     const sub = it.sub || at.sub;
     const email = it.email ?? at.email ?? null;
@@ -34,17 +36,37 @@ export class AuthGuardSocket implements CanActivate {
     const nickname = it.nickname ?? at.nickname ?? null;
     const picture = it.picture ?? at.picture ?? null;
 
-    console.log('[WS][id_token claims]', { sub, email, nickname, name, hasPicture: !!picture });
+    console.log('[WS][id_token claims]', {
+      sub,
+      email,
+      nickname,
+      name,
+      hasPicture: !!picture,
+    });
 
     if (!sub) return false;
 
-    const joueur = await this.users.ensureFromAuth0({ sub, email, name, nickname, picture });
+    const joueur = await this.users.ensureFromAuth0({
+      sub,
+      email,
+      name,
+      nickname,
+      picture,
+    });
 
-    (client as any).user = { sub: joueur.id, username: joueur.username, email: joueur.email };
+    (client as any).user = {
+      sub: joueur.id,
+      username: joueur.username,
+      email: joueur.email,
+    };
 
     await this.prisma.joueur.update({
       where: { id: joueur.id },
-      data: { estConnecte: true, derniereConnexion: new Date(), connectionId: client.id },
+      data: {
+        estConnecte: true,
+        derniereConnexion: new Date(),
+        connectionId: client.id,
+      },
     });
 
     client.once('disconnect', async () => {
@@ -53,7 +75,7 @@ export class AuthGuardSocket implements CanActivate {
           where: { id: joueur.id },
           data: { estConnecte: false, connectionId: null },
         });
-      } catch { }
+      } catch {}
     });
 
     return true;

@@ -9,13 +9,21 @@ import { BiddingModule } from 'src/bidding/bidding.module';
 import { LobbyModule } from 'src/lobby/lobby.module';
 import { PlayGateway } from './play.gateway';
 import { PlayModule } from 'src/play/play.module';
-import { TrickService } from 'src/play/trick.service';
 import { UsersModule } from 'src/users/users.module';
 import { GameModule } from 'src/game/game.module';
 
 @Module({
-    imports:[AuthModule,PrismaModule,RealtimeModule,BiddingModule,LobbyModule,PlayModule,UsersModule,GameModule],
-    providers:[GameGateway,BiddingGateway,LobbyGateway,PlayGateway],
-    exports:[GameGateway,BiddingGateway,LobbyGateway,PlayGateway]
+  imports: [
+    AuthModule,
+    PrismaModule,
+    RealtimeModule,
+    BiddingModule,
+    LobbyModule,
+    PlayModule,
+    UsersModule,
+    GameModule,
+  ],
+  providers: [GameGateway, BiddingGateway, LobbyGateway, PlayGateway],
+  exports: [GameGateway, BiddingGateway, LobbyGateway, PlayGateway],
 })
 export class GatewayModule {}

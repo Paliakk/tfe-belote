@@ -1,79 +1,157 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { GameEvent } from './ws-events';
+
+type SocketWithUser = Socket & { user?: { sub: number; username?: string } };
 
 @Injectable()
-export class RealtimeService implements OnModuleInit {
-  private server: Server;
-  private clients = new Map<number, Socket>();
+export class RealtimeService {
+  private readonly log = new Logger('Realtime');
+  private server?: Server;
 
-  setServer(server: Server) { this.server = server; }
-  onModuleInit() { }
+  // mapping joueurId -> socketIds (un joueur peut avoir plusieurs onglets)
+  private socketsByJoueur = new Map<number, Set<string>>();
+  // mapping socketId -> joueurId
+  private joueurBySocket = new Map<string, number>();
 
-  registerClient(socket: Socket, joueurId: number) {
-    const prev = this.clients.get(joueurId);
-    if (prev && prev.id !== socket.id) { try { prev.disconnect(true); } catch { } }
-    this.clients.set(joueurId, socket);
+  setServer(server: Server) {
+    if (this.server && this.server === server) return;
+    this.server = server;
+
+    // hook de ménage à la déconnexion
+    this.server.on('connection', (sock: SocketWithUser) => {
+      // rien ici: l’enregistrement est fait explicitement via registerClient()
+      sock.on('disconnect', () => {
+        const jid = this.joueurBySocket.get(sock.id);
+        if (jid != null) {
+          this.joueurBySocket.delete(sock.id);
+          const set = this.socketsByJoueur.get(jid);
+          if (set) {
+            set.delete(sock.id);
+            if (set.size === 0) this.socketsByJoueur.delete(jid);
+          }
+        }
+      });
+    });
+    this.log.log('Socket.IO server bound in RealtimeService');
   }
 
-  getClient(joueurId: number): Socket | undefined {
-    return this.clients.get(joueurId);
+  /** Appelé par chaque gateway après avoir joint les rooms pour lier socket<->joueur */
+  registerClient(client: SocketWithUser, joueurId: number) {
+    this.joueurBySocket.set(client.id, joueurId);
+    let set = this.socketsByJoueur.get(joueurId);
+    if (!set) {
+      set = new Set<string>();
+      this.socketsByJoueur.set(joueurId, set);
+    }
+    set.add(client.id);
   }
-  emitToJoueur(joueurId: number, event: string, payload: any) {
-    this.getClient(joueurId)?.emit(event, payload);
+
+  // ------------------ ciblage pratique ------------------
+
+  private roomLobby(lobbyId: number) {
+    return `lobby-${lobbyId}`;
   }
-  // ——— Émissions réutilisables ———
+  private roomPartie(partieId: number) {
+    return `partie-${partieId}`;
+  }
+
+  /** Emit à tous les sockets d’un joueur */
+  emitToJoueur(joueurId: number, event: string, payload?: any) {
+    if (!this.server) return;
+    const set = this.socketsByJoueur.get(joueurId);
+    if (!set || set.size === 0) return;
+    for (const sid of set) {
+      this.server.to(sid).emit(event, payload);
+    }
+  }
+
+  /** Emit à une partie (room partie-xxx) */
+  emitToPartie(partieId: number, event: string, payload?: any) {
+    if (!this.server) return;
+    this.server.to(this.roomPartie(partieId)).emit(event, payload);
+  }
+
+  /** Emit à un lobby (room lobby-xxx) */
+  emitToLobby(lobbyId: number, event: string, payload?: any) {
+    if (!this.server) return;
+    this.server.to(this.roomLobby(lobbyId)).emit(event, payload);
+  }
+
+  // ------------------ helpers “métier” prêts-à-l’emploi ------------------
+
+  /** Push l’état “liste des membres” du lobby */
   emitLobbyState(lobbyId: number, membres: { id: number; username: string }[]) {
-    const payload = { lobbyId, membres };
-    this.server?.to(`lobby-${lobbyId}`).emit('lobby:state', payload);
+    this.emitToLobby(lobbyId, 'lobby:state', { lobbyId, membres });
   }
 
-  emitLobbyStateToClient(socket: Socket, lobbyId: number, membres: { id: number; username: string }[]) {
-    socket.emit('lobby:state', { lobbyId, membres });
+  /** Même chose mais à un client précis (utile quand il quitte) */
+  emitLobbyStateToClient(
+    client: Socket,
+    lobbyId: number,
+    membres: { id: number; username: string }[],
+  ) {
+    client.emit('lobby:state', { lobbyId, membres });
   }
 
-  emitLobbyClosed(lobbyId: number) {
-    this.server?.to(`lobby-${lobbyId}`).emit('lobby:closed', { lobbyId });
-  }
-
+  /** Petit event court pour feed un log côté UI */
   emitLobbyEvent(lobbyId: number, type: 'join' | 'leave', joueur: string) {
-    this.server?.to(`lobby-${lobbyId}`).emit('lobby:update', { lobbyId, type, joueur });
-  }
-  emitToLobby<T = any>(lobbyId:number,event:string,payload?:T){
-    this.server?.to(`lobby${lobbyId}`).emit(event,payload)
+    this.emitToLobby(lobbyId, 'lobby:update', { lobbyId, type, joueur });
   }
 
+  /** Notifie le démarrage de la partie (redirigera le front) */
   emitGameStarted(lobbyId: number, partieId: number) {
-    this.server?.to(`lobby-${lobbyId}`).emit('lobby:gameStarted', {
-      lobbyId,
-      partieId
-    })
-  }
-  // src/realtime/realtime.service.ts
-  emitToPartie(partieId: number, event: string, payload: any) {
-    this.server?.to(`partie-${partieId}`).emit(event, payload);
-  }
-  emitHandTo(joueurId: number, payload: { mancheId: number; cartes: any[] }) {
-    this.getClient(joueurId)?.emit('hand:state', payload);
+    // Compat : certains front écoutent lobby:gameStarted, d’autres partie:started
+    this.emitToLobby(lobbyId, 'lobby:gameStarted', { lobbyId, partieId });
+    this.emitToLobby(lobbyId, 'partie:started', { partieId });
   }
 
-  async emitHandsForPartie(prisma: PrismaService, partieId: number, mancheId: number) {
-    // récupère tous les joueurs de la partie + leur main courante
+  /** Notifie que le lobby est fermé/supprimé */
+  emitLobbyClosed(lobbyId: number) {
+    this.emitToLobby(lobbyId, 'lobby:closed', { lobbyId });
+  }
+
+  /** Envoie la main privée d’un joueur (format attendu par ton front) */
+  emitHandTo(
+    joueurId: number,
+    payload: {
+      mancheId: number;
+      cartes: { id: number; valeur: string; couleurId: number }[];
+    },
+  ) {
+    this.emitToJoueur(joueurId, 'hand:state', payload);
+  }
+
+  /**
+   * Diffuse les mains complètes de la manche en cours à TOUS les joueurs d’une partie.
+   * (lit la DB pour chaque joueur → pas d’info privée croisée)
+   */
+  async emitHandsForPartie(
+    prisma: PrismaService,
+    partieId: number,
+    mancheId: number,
+  ) {
     const joueurs = await prisma.equipeJoueur.findMany({
       where: { equipe: { partieId } },
       select: { joueurId: true },
+      orderBy: { ordreSiege: 'asc' },
     });
 
-    for (const { joueurId } of joueurs) {
-      const cartes = await prisma.main.findMany({
-        where: { mancheId, joueurId, jouee: false },
+    for (const j of joueurs) {
+      const hand = await prisma.main.findMany({
+        where: { mancheId, joueurId: j.joueurId, jouee: false },
         include: { carte: true },
         orderBy: { id: 'asc' },
       });
-      this.emitHandTo(
-        joueurId,
-        { mancheId, cartes: cartes.map(m => ({ id: m.carteId, valeur: m.carte.valeur, couleurId: m.carte.couleurId })) }
-      );
+      this.emitHandTo(j.joueurId, {
+        mancheId,
+        cartes: hand.map((m) => ({
+          id: m.carteId,
+          valeur: m.carte.valeur,
+          couleurId: m.carte.couleurId,
+        })),
+      });
     }
   }
 }

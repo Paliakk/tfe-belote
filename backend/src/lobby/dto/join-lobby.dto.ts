@@ -5,11 +5,11 @@ import { IsInt, Min, IsOptional, IsString } from 'class-validator';
  */
 
 export class JoinLobbyDto {
-    @IsInt({ message: 'lobbyId doit être un entier.' })
-    @Min(1)
-    lobbyId: number
+  @IsInt({ message: 'lobbyId doit être un entier.' })
+  @Min(1)
+  lobbyId: number;
 
-    @IsOptional()
-    @IsString({ message: 'password doit être une chaîne si fourni.' })
-    password?: string
+  @IsOptional()
+  @IsString({ message: 'password doit être une chaîne si fourni.' })
+  password?: string;
 }

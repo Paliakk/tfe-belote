@@ -10,7 +10,11 @@ import { Server, Socket } from 'socket.io';
 import { UseGuards, NotFoundException } from '@nestjs/common';
 import { AuthGuardSocket } from 'src/auth/auth-socket.guard';
 import { RealtimeService } from 'src/realtime/realtime.service';
-import { GameEvent, BiddingPlacedPayload, BiddingStatePayload } from 'src/realtime/game-event';
+import {
+  GameEvent,
+  BiddingPlacedPayload,
+  BiddingStatePayload,
+} from 'src/realtime/ws-events';
 import { BiddingService } from 'src/bidding/bidding.service';
 import { BidType } from 'src/bidding/dto/create-bid.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -26,8 +30,8 @@ export class BiddingGateway implements OnGatewayInit {
     private readonly rt: RealtimeService,
     private readonly biddingService: BiddingService,
     private readonly prisma: PrismaService,
-    private readonly playQueries: PlayQueriesService
-  ) { }
+    private readonly playQueries: PlayQueriesService,
+  ) {}
 
   afterInit(server: Server) {
     // OK si déjà appelé ailleurs : on s’assure que RealtimeService a bien le server
@@ -69,10 +73,14 @@ export class BiddingGateway implements OnGatewayInit {
       })),
       seats,
       carteRetournee: state.carteRetournee
-        ? { id: state.carteRetournee.id, valeur: state.carteRetournee.valeur, couleurId: state.carteRetournee.couleurId }
+        ? {
+            id: state.carteRetournee.id,
+            valeur: state.carteRetournee.valeur,
+            couleurId: state.carteRetournee.couleurId,
+          }
         : null,
     };
-    client.emit(GameEvent.BiddingState, payload)
+    client.emit(GameEvent.BiddingState, payload);
 
     // (Option) tu peux aussi diffuser à toute la table si tu veux resynchroniser tout le monde :
     // const partieId = await this.getPartieIdFromManche(data.mancheId);
@@ -81,9 +89,15 @@ export class BiddingGateway implements OnGatewayInit {
 
   // === Poser une enchère (diffusée à TOUTE la room de la partie) ===
   @SubscribeMessage('bidding:place')
-  async placeBid(@MessageBody() data: { mancheId: number; type: 'pass' | 'take_card' | 'choose_color'; couleurAtoutId?: number; },
-    @ConnectedSocket() client: Socket & { user?: { sub: number } }) {
-
+  async placeBid(
+    @MessageBody()
+    data: {
+      mancheId: number;
+      type: 'pass' | 'take_card' | 'choose_color';
+      couleurAtoutId?: number;
+    },
+    @ConnectedSocket() client: Socket & { user?: { sub: number } },
+  ) {
     const joueurId = client.user!.sub;
     const res = await this.biddingService.placeBid(data.mancheId, joueurId, {
       type: data.type as BidType,
@@ -94,19 +108,23 @@ export class BiddingGateway implements OnGatewayInit {
 
     // event "court" (UX)
     this.rt.emitToPartie(partieId, GameEvent.BiddingPlaced, {
-      mancheId: data.mancheId, joueurId, type: data.type,
-      couleurAtoutId: data.couleurAtoutId ?? undefined, encherePoints: undefined,
-      tour: 1, at: new Date().toISOString(),
+      mancheId: data.mancheId,
+      joueurId,
+      type: data.type,
+      couleurAtoutId: data.couleurAtoutId ?? undefined,
+      encherePoints: undefined,
+      tour: 1,
+      at: new Date().toISOString(),
     });
 
     // état complet à toute la table
     const updated = await this.biddingService.getState(data.mancheId);
-    const seats = await this.biddingService.getSeatsForManche(data.mancheId)
+    const seats = await this.biddingService.getSeatsForManche(data.mancheId);
     this.rt.emitToPartie(partieId, GameEvent.BiddingState, {
       mancheId: updated.mancheId,
       joueurActuelId: updated.joueurActuelId,
       tourActuel: updated.tourActuel as 1 | 2,
-      encheres: updated.historique.map(e => ({
+      encheres: updated.historique.map((e) => ({
         joueurId: e.joueur.id,
         type: e.type,
         couleurAtoutId: e.couleurAtoutId ?? undefined,
@@ -115,7 +133,11 @@ export class BiddingGateway implements OnGatewayInit {
       })),
       seats,
       carteRetournee: updated.carteRetournee
-        ? { id: updated.carteRetournee.id, valeur: updated.carteRetournee.valeur, couleurId: updated.carteRetournee.couleurId }
+        ? {
+            id: updated.carteRetournee.id,
+            valeur: updated.carteRetournee.valeur,
+            couleurId: updated.carteRetournee.couleurId,
+          }
         : null,
     });
 
@@ -125,10 +147,12 @@ export class BiddingGateway implements OnGatewayInit {
 
       // 1) Déterminer qui commence le 1er pli
       // Si tu as déjà la logique quelque part, utilise-la. Sinon, prends ce que ta DB indique.
-      let firstToPlayId = (await this.prisma.manche.findUnique({
-        where: { id: data.mancheId },
-        select: { joueurActuelId: true },
-      }))?.joueurActuelId;
+      let firstToPlayId = (
+        await this.prisma.manche.findUnique({
+          where: { id: data.mancheId },
+          select: { joueurActuelId: true },
+        })
+      )?.joueurActuelId;
 
       // Si non défini, appelle ta logique métier (à adapter à tes règles)
       // ex: firstToPlayId = await this.playService.getFirstPlayerId(data.mancheId);
@@ -149,7 +173,10 @@ export class BiddingGateway implements OnGatewayInit {
       });
 
       // 3) Envoyer les cartes jouables AU SEUL joueur actif
-      const playable = await this.playQueries.getPlayable(data.mancheId, firstToPlayId);
+      const playable = await this.playQueries.getPlayable(
+        data.mancheId,
+        firstToPlayId,
+      );
       // Normalise si besoin: le front accepte {carteIds}/playable/cartes[…]
       this.rt.emitToJoueur(firstToPlayId, 'play:playable', playable);
 
@@ -157,7 +184,10 @@ export class BiddingGateway implements OnGatewayInit {
       this.rt.emitToPartie(partieId, 'bidding:ended', {
         mancheId: data.mancheId,
         preneurId: joueurId,
-        atoutId: (data.type === 'take_card') ? updated.carteRetournee?.couleurId : data.couleurAtoutId
+        atoutId:
+          data.type === 'take_card'
+            ? updated.carteRetournee?.couleurId
+            : data.couleurAtoutId,
       });
       return;
     }
@@ -166,16 +196,25 @@ export class BiddingGateway implements OnGatewayInit {
     if (res.newMancheId) {
       // avertir toute la table
       this.rt.emitToPartie(partieId, 'donne:relancee', {
-        oldMancheId: data.mancheId, newMancheId: res.newMancheId, numero: res.numero
+        oldMancheId: data.mancheId,
+        newMancheId: res.newMancheId,
+        numero: res.numero,
       });
       // pousser les nouvelles mains pour la nouvelle donne
       await this.rt.emitHandsForPartie(this.prisma, partieId, res.newMancheId);
       // et pousser l’état d’enchères initial de la nouvelle donne
       const st2 = await this.biddingService.getState(res.newMancheId);
       this.rt.emitToPartie(partieId, GameEvent.BiddingState, {
-        mancheId: st2.mancheId, joueurActuelId: st2.joueurActuelId,
+        mancheId: st2.mancheId,
+        joueurActuelId: st2.joueurActuelId,
         tourActuel: st2.tourActuel as 1 | 2,
-        encheres: st2.historique.map(e => ({ joueurId: e.joueur.id, type: e.type, couleurAtoutId: e.couleurAtoutId ?? undefined, encherePoints: undefined, createdAt: e.at.toISOString() })),
+        encheres: st2.historique.map((e) => ({
+          joueurId: e.joueur.id,
+          type: e.type,
+          couleurAtoutId: e.couleurAtoutId ?? undefined,
+          encherePoints: undefined,
+          createdAt: e.at.toISOString(),
+        })),
       });
     }
   }

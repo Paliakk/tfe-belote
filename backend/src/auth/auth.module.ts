@@ -16,12 +16,7 @@ import { AuthGuardSocket } from './auth-socket.guard';
     JwtModule.register({}), // <- même vide, nécessaire pour fournir JwtService
     UsersModule,
   ],
-  providers: [
-    JwtStrategy,
-    JwtAuthGuard,
-    EnsureJoueurGuard,
-    AuthGuardSocket
-  ],
+  providers: [JwtStrategy, JwtAuthGuard, EnsureJoueurGuard, AuthGuardSocket],
   exports: [
     JwtStrategy,
     JwtAuthGuard,

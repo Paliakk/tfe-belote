@@ -12,7 +12,7 @@ function normalizeUsernameSeed(s?: string | null): string {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async ensureFromAuth0(u: {
     sub: string;
@@ -27,7 +27,9 @@ export class UsersService {
     }
 
     // 1) par sub
-    let joueur = await this.prisma.joueur.findUnique({ where: { auth0Sub: u.sub } });
+    const joueur = await this.prisma.joueur.findUnique({
+      where: { auth0Sub: u.sub },
+    });
     if (joueur) {
       // mise à jour douce (ne JAMAIS écraser email par null)
       return this.prisma.joueur.update({
@@ -42,7 +44,9 @@ export class UsersService {
 
     // 2) par email si dispo
     if (u.email) {
-      const byEmail = await this.prisma.joueur.findUnique({ where: { email: u.email } });
+      const byEmail = await this.prisma.joueur.findUnique({
+        where: { email: u.email },
+      });
       if (byEmail) {
         return this.prisma.joueur.update({
           where: { id: byEmail.id },
@@ -85,7 +89,7 @@ export class UsersService {
     }
 
     // 3.d) displayName
-    const displayName = (u.name && u.name.trim()) ? u.name.trim() : username;
+    const displayName = u.name && u.name.trim() ? u.name.trim() : username;
 
     // 3.e) création
     return this.prisma.joueur.create({

@@ -5,7 +5,11 @@ import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class EnsureJoueurGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService, private readonly users: UsersService, private readonly jwt: JwtService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly users: UsersService,
+    private readonly jwt: JwtService,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
@@ -15,12 +19,17 @@ export class EnsureJoueurGuard implements CanActivate {
       return true;
     }
 
-    const u = req.user as any; // injecté par JwtStrategy
+    const u = req.user; // injecté par JwtStrategy
     if (!u?.auth0Sub) return false;
 
     // Essayez d'enrichir avec l'ID token si fourni par le front
     const idToken = (req.headers['x-id-token'] as string) || null;
-    let enriched = { email: u.email, name: u.name, nickname: u.nickname, picture: u.picture };
+    const enriched = {
+      email: u.email,
+      name: u.name,
+      nickname: u.nickname,
+      picture: u.picture,
+    };
     if (idToken) {
       try {
         // Pour un ID Token, l’audience = clientId SPA, l’issuer = AUTH0_ISSUER_URL
@@ -43,7 +52,7 @@ export class EnsureJoueurGuard implements CanActivate {
       nickname: enriched.nickname,
       picture: enriched.picture,
     });
-    req.user.joueurId = joueur.id
+    req.user.joueurId = joueur.id;
     return true;
   }
 }
