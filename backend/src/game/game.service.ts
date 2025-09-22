@@ -6,6 +6,7 @@ import {
 import { LobbyService } from 'src/lobby/lobby.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
+type Totals = { team1: number; team2: number } | null
 
 @Injectable()
 export class GameService {
@@ -13,7 +14,8 @@ export class GameService {
     private readonly prisma: PrismaService,
     private readonly lobbyService: LobbyService,
     private readonly rt: RealtimeService,
-  ) {}
+  ) { }
+  
 
   async quitGame(partieId: number, joueurId: number) {
     return this.prisma.$transaction(
@@ -75,4 +77,86 @@ export class GameService {
       this.rt.emitToLobby(lobbyId, 'lobby:state', { lobbyId, membres: [] });
     }
   }
+
+  async endPartieAndReturnToLobby(
+    partieId: number,
+    opts?: { winnerTeamNumero?: 1 | 2; totals?: Totals }
+  ) {
+    await this.prisma.partie.update({
+      where: { id: partieId },
+      data: { statut: 'finie' },
+    });
+
+    const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
+    const lobbyId = reused?.lobbyId ?? null;
+
+    // 🔔 game.js a besoin de winnerTeamNumero & totals ici
+    this.rt.emitToPartie(partieId, 'game:over', {
+      partieId,
+      lobbyId,
+      winnerTeamNumero: opts?.winnerTeamNumero ?? null,
+      totals: opts?.totals ?? null,
+    });
+
+    if (lobbyId != null) {
+      await this.rt.movePartieToLobby(partieId, lobbyId);
+      this.rt.emitToLobby(lobbyId, 'lobby:state', {
+        lobbyId,
+        membres: reused!.membres,
+      });
+      this.rt.emitToLobby(lobbyId, 'lobby:updated', {
+        lobbyId,
+        membres: reused!.membres,
+        statut: 'en_attente',
+      });
+    }
+
+    return { ok: true, lobbyId };
+  }
+
+  async abandonPartie(partieId: number, joueurId: number) {
+  // (option) vérifier que le joueur est bien membre de la partie
+  const isMember = await this.prisma.equipeJoueur.findFirst({
+    where: { equipe: { partieId }, joueurId },
+    select: { equipeId: true },
+  });
+  if (!isMember) {
+    // on peut soit throw, soit ignorer silencieusement
+    // throw new ForbiddenException('Vous ne participez pas à cette partie.');
+  }
+
+  // statut 'abandonnee' (enum PartieStatut)
+  await this.prisma.partie.update({
+    where: { id: partieId },
+    data: { statut: 'abandonnee' },
+  });
+
+  // On réutilise le lobby et on notifie les clients comme pour fin de partie
+  const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
+  const lobbyId = reused?.lobbyId ?? null;
+
+  // Notifier la fin pour l’UI (raison abandon)
+  this.rt.emitToPartie(partieId, 'game:over', {
+    partieId,
+    lobbyId,
+    reason: 'abandon',           // 👈 new (front peut montrer un message différent)
+    winnerTeamNumero: null,      // inconnu / sans objet
+    totals: null as Totals,
+  });
+
+  if (lobbyId != null) {
+    await this.rt.movePartieToLobby(partieId, lobbyId);
+    this.rt.emitToLobby(lobbyId, 'lobby:state', {
+      lobbyId,
+      membres: reused!.membres,
+    });
+    this.rt.emitToLobby(lobbyId, 'lobby:updated', {
+      lobbyId,
+      membres: reused!.membres,
+      statut: 'en_attente',
+    });
+  }
+
+  return { ok: true, lobbyId };
+}
 }

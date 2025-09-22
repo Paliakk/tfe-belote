@@ -14,6 +14,7 @@ import { RealtimeService } from 'src/realtime/realtime.service';
 import { LobbyService } from 'src/lobby/lobby.service';
 import { BiddingService } from 'src/bidding/bidding.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { GameService } from 'src/game/game.service';
 
 @WebSocketGateway({ cors: true })
 @UseGuards(AuthGuardSocket)
@@ -24,7 +25,8 @@ export class GameGateway implements OnGatewayInit {
     private readonly lobbyService: LobbyService,
     private readonly biddingService: BiddingService,
     private readonly prisma: PrismaService,
-  ) {}
+    private readonly gameService: GameService,
+  ) { }
   afterInit(server: Server) {
     this.rt.setServer(server);
     console.log('[WS] Gateway afterInit: server set in RealtimeService');
@@ -54,11 +56,17 @@ export class GameGateway implements OnGatewayInit {
     client.join(`partie-${partieId}`);
     this.rt.registerClient(client, joueurId);
 
+    const lobby = await this.prisma.lobby.findUnique({
+      where: { partieId },
+      select: { nom: true },
+    });
     // Confirme au client qu'il a rejoint + donne manche courante
     client.emit('joinedPartie', {
       partieId,
       joueurId,
       mancheId,
+      numero: info.partie.mancheCourante?.numero ?? null, // 👈 numéro
+      lobbyNom: lobby?.nom ?? '(lobby inconnu)',         // 👈 nom du lobby
       at: new Date().toISOString(),
     });
 
@@ -89,10 +97,10 @@ export class GameGateway implements OnGatewayInit {
       })),
       carteRetournee: st.carteRetournee
         ? {
-            id: st.carteRetournee.id,
-            valeur: st.carteRetournee.valeur,
-            couleurId: st.carteRetournee.couleurId,
-          }
+          id: st.carteRetournee.id,
+          valeur: st.carteRetournee.valeur,
+          couleurId: st.carteRetournee.couleurId,
+        }
         : null,
     });
 
@@ -111,6 +119,19 @@ export class GameGateway implements OnGatewayInit {
       })),
     });
 
+    return { success: true };
+  }
+  @SubscribeMessage('game:abandon')
+  async onAbandon(
+    @ConnectedSocket()
+    client: Socket & { user: { sub: number; username?: string } },
+    @MessageBody() data: { partieId: number },
+  ) {
+    const joueurId = client.user.sub;
+    const partieId = Number(data?.partieId);
+    if (!partieId) return { success: false, error: 'partieId manquant' };
+
+    await this.gameService.abandonPartie(partieId, joueurId);
     return { success: true };
   }
 }

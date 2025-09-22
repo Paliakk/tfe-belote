@@ -13,7 +13,14 @@ import { FriendsService } from 'src/friends/friends.service';
 
 @Injectable()
 export class LobbyService {
-  constructor(private readonly prisma: PrismaService, private readonly friends: FriendsService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly friends: FriendsService,
+  ) { }
+
+  // -------------------------------------------------------------------------
+  // 👇 Création / Recherche de lobby
+  // -------------------------------------------------------------------------
 
   /** Créer un lobby et y ajouter le créateur comme membre */
   async create(dto: CreateLobbyDto, createurId: number) {
@@ -74,6 +81,10 @@ export class LobbyService {
     if (!lobby) throw new NotFoundException(`Lobby ${id} introuvable`);
     return lobby;
   }
+
+  // -------------------------------------------------------------------------
+  // 👇 Gestion des membres (join/leave/list)
+  // -------------------------------------------------------------------------
 
   /** UC04 — Rejoindre un lobby (joueurId vient du token) */
   async join(dto: JoinLobbyDto, joueurId: number) {
@@ -214,6 +225,10 @@ export class LobbyService {
       return { message: `Joueur ${joueurId} a quitté le lobby ${lobbyId}.` };
     });
   }
+
+  // -------------------------------------------------------------------------
+  // 👇 Lancement de partie
+  // -------------------------------------------------------------------------
 
   /** Lancer la partie — `createurId` vient du token */
   async startGame(lobbyId: number, createurId: number, scoreMax?: number) {
@@ -357,6 +372,11 @@ export class LobbyService {
       { isolationLevel: 'Serializable' },
     );
   }
+
+  // -------------------------------------------------------------------------
+  // 👇 Utilitaires / queries complémentaires
+  // -------------------------------------------------------------------------
+
   async findPartieWithEquipe(partieId: number, joueurId: number) {
     const partie = await this.prisma.partie.findUnique({
       where: { id: partieId },
@@ -398,6 +418,7 @@ export class LobbyService {
     if (!lobby) throw new NotFoundException(`Lobby "${nom}" introuvable.`);
     return lobby;
   }
+
   async joinByName(nom: string, joueurId: number) {
     console.log(
       `[Service] Tentative de rejoindre par nom: ${nom} (joueur ${joueurId})`,
@@ -423,6 +444,60 @@ export class LobbyService {
     };
   }
 
+  async invite(lobbyId: number, fromId: number, toId: number) {
+    const lobby = await this.prisma.lobby.findUnique({
+      where: { id: lobbyId },
+      include: { membres: true, createur: true },
+    });
+    if (!lobby) throw new NotFoundException(`Lobby ${lobbyId} introuvable.`);
+    if (lobby.statut !== 'en_attente') throw new BadRequestException(`Lobby non joignable.`);
+
+    const capacity = await this.prisma.lobbyJoueur.count({ where: { lobbyId } });
+    if (capacity >= 4) throw new BadRequestException(`Lobby plein.`);
+
+    // L’expéditeur doit être membre du lobby
+    const isMember = lobby.membres.some(m => m.joueurId === fromId);
+    if (!isMember) throw new ForbiddenException(`Seuls les membres du lobby peuvent inviter.`);
+
+    // Si visibility=friends -> vérifier amitié entre destinataire et créateur
+    if (lobby.visibility === 'friends') {
+      const ok = await this.friends.areFriends(toId, lobby.createurId);
+      if (!ok) throw new ForbiddenException(`Ce lobby est réservé aux amis du créateur.`);
+    }
+
+    // Upsert d'une invitation "sent" (unique par lobbyId+toId+status)
+    const inv = await this.prisma.lobbyInvite.upsert({
+      where: { lobbyId_toId_status: { lobbyId, toId, status: 'sent' } },
+      create: { lobbyId, fromId, toId, status: 'sent' },
+      update: { status: 'sent' },
+    });
+
+    return inv;
+  }
+
+  async acceptInvite(lobbyId: number, userId: number) {
+    const invite = await this.prisma.lobbyInvite.findFirst({
+      where: { lobbyId, toId: userId, status: 'sent' },
+    });
+    if (!invite) throw new NotFoundException(`Invitation introuvable.`);
+
+    await this.prisma.lobbyInvite.update({
+      where: { id: invite.id },
+      data: { status: 'accepted' },
+    });
+
+    // Réutilise le flux standard d’entrée dans le lobby
+    return this.join({ lobbyId }, userId);
+  }
+
+  // -------------------------------------------------------------------------
+  // 👇 Méthodes historiques (conservées pour compat / tooling)
+  // -------------------------------------------------------------------------
+
+  /**
+   * (Historique) Vide les membres du lobby lié à la partie, puis renvoie l'id du lobby.
+   * NB: pas adapté à "réutiliser le lobby avec les mêmes joueurs".
+   */
   async clearLobbyMembersByPartie(partieId: number): Promise<number | null> {
     const lobby = await this.prisma.lobby.findUnique({
       where: { partieId },
@@ -435,6 +510,11 @@ export class LobbyService {
     });
     return lobby.id;
   }
+
+  /**
+   * (Historique) Réinitialise le lobby lié à la partie en le remettant "en_attente" et détachant la partie.
+   * ⚠️ Supprime les membres. Préférer `reuseLobbyAfterGameByPartie` pour ton besoin actuel.
+   */
   async resetLobbyAfterGameByPartie(partieId: number) {
     const lobby = await this.prisma.lobby.findFirst({
       where: { partieId },
@@ -443,52 +523,68 @@ export class LobbyService {
     if (!lobby) return null;
 
     await this.prisma.$transaction([
-      // on vide les membres
       this.prisma.lobbyJoueur.deleteMany({ where: { lobbyId: lobby.id } }),
-      // on "libère" le lobby pour une nouvelle partie
       this.prisma.lobby.update({
         where: { id: lobby.id },
-        data: { partieId: null, statut: 'en_attente' }, // <- clé du problème
+        data: { partieId: null, statut: 'en_attente' },
       }),
     ]);
 
     return lobby.id;
   }
-  async invite(lobbyId: number, fromId: number, toId: number) {
-    const lobby = await this.prisma.lobby.findUnique({ where: { id: lobbyId }, include: { membres: true, createur: true } });
-    if (!lobby) throw new NotFoundException(`Lobby ${lobbyId} introuvable.`);
-    if (lobby.statut !== 'en_attente') throw new BadRequestException(`Lobby non joignable.`);
-    const capacity = await this.prisma.lobbyJoueur.count({ where: { lobbyId } });
-    if (capacity >= 4) throw new BadRequestException(`Lobby plein.`);
 
-    // autoriser seulement le créateur (ou un membre ? à toi de choisir)
-    const isMember = lobby.membres.some(m => m.joueurId === fromId);
-    if (!isMember) throw new ForbiddenException(`Seuls les membres du lobby peuvent inviter.`);
+  // -------------------------------------------------------------------------
+  // 👇 NOUVEAU — Réutiliser le lobby à la fin d'une partie (sans tout casser)
+  // -------------------------------------------------------------------------
 
-    // si visibility=friends -> vérifier amitié entre toId et createur
-    if (lobby.visibility === 'friends') {
-      const ok = await this.friends.areFriends(toId, lobby.createurId);
-      if (!ok) throw new ForbiddenException(`Ce lobby est réservé aux amis du créateur.`);
-    }
-
-    // créer (ou retrouver) une invite active
-    const inv = await this.prisma.lobbyInvite.upsert({
-      where: { lobbyId_toId_status: { lobbyId, toId, status: 'sent' } },
-      create: { lobbyId, fromId, toId, status: 'sent' },
-      update: { status: 'sent' },
+  /**
+   * Réutilise le lobby lié à la partie : repasse en "en_attente", détache la partie,
+   * et (re)garantit la présence des 4 joueurs de la partie dans le lobby.
+   *
+   * Ne publie PAS d'événements WS (laissez un gateway/service caller le faire),
+   * pour éviter toute dépendance ici.
+   *
+   * Retourne: { lobbyId, membres: { id, username }[] }
+   */
+  async reuseLobbyAfterGameByPartie(partieId: number): Promise<{ lobbyId: number, membres: { id: number, username: string }[] } | null> {
+    // 1) Trouver le lobby lié à la partie
+    const lobby = await this.prisma.lobby.findFirst({
+      where: { partieId },
+      select: { id: true },
     });
-    return inv;
-  }
-  async acceptInvite(lobbyId: number, userId: number) {
-    const invite = await this.prisma.lobbyInvite.findFirst({
-      where: { lobbyId, toId: userId, status: 'sent' },
-    });
-    if (!invite) throw new NotFoundException(`Invitation introuvable.`);
-    await this.prisma.lobbyInvite.update({ where: { id: invite.id }, data: { status: 'accepted' } });
+    if (!lobby) return null;
 
-    // réutilise join()
-    return this.join({ lobbyId }, userId);
+    // 2) Récupérer les joueurs de la partie via EquipeJoueur
+    const joueursPartie = await this.prisma.equipeJoueur.findMany({
+      where: { equipe: { partieId } },
+      select: { joueurId: true, joueur: { select: { id: true, username: true } } },
+      orderBy: { ordreSiege: 'asc' },
+    });
+    const membres = joueursPartie.map(j => j.joueur);
+
+    // 3) Transaction : repasser le lobby "en_attente", délier la partie, upsert membres
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lobby.update({
+        where: { id: lobby.id },
+        data: { partieId: null, statut: 'en_attente' },
+      });
+
+      for (const m of membres) {
+        await tx.lobbyJoueur.upsert({
+          where: { lobbyId_joueurId: { lobbyId: lobby.id, joueurId: m.id } },
+          update: {},
+          create: { lobbyId: lobby.id, joueurId: m.id },
+        });
+      }
+    });
+
+    return { lobbyId: lobby.id, membres };
   }
+
+  // -------------------------------------------------------------------------
+  // 👇 Aide: utilitaires de lecture supplémentaires
+  // -------------------------------------------------------------------------
+
   async findCurrentLobbyFor(joueurId: number) {
     return this.prisma.lobby.findFirst({
       where: {
@@ -498,6 +594,7 @@ export class LobbyService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
   async isMemberOfLobby(lobbyId: number, joueurId: number) {
     const row = await this.prisma.lobbyJoueur.findUnique({
       where: { lobbyId_joueurId: { lobbyId, joueurId } },
@@ -505,6 +602,7 @@ export class LobbyService {
     });
     return !!row;
   }
+
   async getMemberIds(lobbyId: number): Promise<number[]> {
     const rows = await this.prisma.lobbyJoueur.findMany({
       where: { lobbyId },
@@ -512,6 +610,7 @@ export class LobbyService {
     });
     return rows.map(r => r.joueurId);
   }
+
   async getLobbyLight(lobbyId: number) {
     return this.prisma.lobby.findUnique({
       where: { id: lobbyId },

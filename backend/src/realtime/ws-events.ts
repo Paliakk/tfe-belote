@@ -27,6 +27,7 @@ export enum GameEvent {
   TurnState = 'turn:state',
   TrickState = 'trick:state',
   TrickClosed = 'trick:closed',
+  MancheEnded = 'manche:ended',
 
   // Score live
   ScoreLive = 'score:live',

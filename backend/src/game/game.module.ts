@@ -13,7 +13,6 @@ import { RealtimeModule } from 'src/realtime/realtime.module';
     PrismaModule,
     AuthModule,
     LobbyModule,
-    BiddingModule,
     RealtimeModule,
   ],
   exports: [GameService],

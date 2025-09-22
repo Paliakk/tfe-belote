@@ -17,6 +17,8 @@ import { TrickService } from 'src/play/services/trick.service';
 import { BiddingService } from 'src/bidding/bidding.service';
 import type { SocketWithUser } from 'src/types/ws';
 import { GameService } from 'src/game/game.service';
+import { GameEvent } from 'src/realtime/ws-events';
+
 
 type PlayCardOngoing = {
   message: string;
@@ -173,7 +175,7 @@ export class PlayGateway implements OnGatewayInit {
       // ⛔ garde-fou: pas de jouables tant que pas de preneur
       const bid = await this.bidding.getState(mancheId);
       if (!bid?.preneurId) {
-        this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds: [] });
+        this.rt.emitToJoueur(joueurId, GameEvent.PlayPlayable, { carteIds: [] })
         return;
       }
 
@@ -195,7 +197,7 @@ export class PlayGateway implements OnGatewayInit {
         });
       }
 
-      this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds });
+      this.rt.emitToJoueur(joueurId, GameEvent.PlayPlayable, { carteIds });
     } catch (e: any) {
       console.error('[play:getPlayable] error', e?.message || e);
       client.emit('error', {
@@ -239,7 +241,7 @@ export class PlayGateway implements OnGatewayInit {
 
       // 1) Pli courant
       const trick = await this.queries.getActiveTrick(mancheId);
-      this.rt.emitToPartie(partieId, 'trick:state', trick);
+      this.rt.emitToPartie(partieId, GameEvent.TrickState, trick);
 
       // 2) Main MAJ pour le joueur qui vient de jouer
       const myCards = await this.prisma.main.findMany({
@@ -296,7 +298,7 @@ export class PlayGateway implements OnGatewayInit {
       if (trickClosed) {
         const prev = await this.trick.previousTrick(mancheId);
         if (prev?.cartes?.length) {
-          this.rt.emitToPartie(partieId, 'trick:closed', {
+          this.rt.emitToPartie(partieId, GameEvent.TrickClosed, {
             cartes: prev.cartes,
             gagnantId: prev.gagnantId,
           });
@@ -304,7 +306,7 @@ export class PlayGateway implements OnGatewayInit {
 
         // score live à toute la table
         const live = await this.trick.scoreLive(mancheId);
-        this.rt.emitToPartie(partieId, 'score:live', live);
+        this.rt.emitToPartie(partieId, GameEvent.ScoreLive, live);
       }
 
       // 5) Fin de manche (UC12) auto : si UC11 a enchaîné endOfHand, on diffuse tout
@@ -312,11 +314,11 @@ export class PlayGateway implements OnGatewayInit {
         const end = res.endOfHand; // payload renvoyé par MancheService.endOfHand()
 
         // a) informer la table que la manche est terminée (scores détaillés + cumuls + décision)
-        this.rt.emitToPartie(partieId, 'manche:ended', end);
+        this.rt.emitToPartie(partieId, GameEvent.MancheEnded, end);
 
         // b) Game over ?
         if (end.gameOver) {
-          this.rt.emitToPartie(partieId, 'game:over', end.gameOver);
+          this.rt.emitToPartie(partieId, GameEvent.GameOver, end.gameOver);
           await this.gameService.onGameOver(partieId);
           return { ok: true };
         }
@@ -371,7 +373,7 @@ export class PlayGateway implements OnGatewayInit {
   ) {
     const score = await this.trick.scoreLive(data.mancheId);
     // envoie le score uniquement à l'appelant
-    this.rt.emitToJoueur(client.user!.sub, 'score:live', score);
+    this.rt.emitToJoueur(client.user!.sub, GameEvent.ScoreLive, score);
   }
   @SubscribeMessage('ui:rehydrate')
   async rehydrate(
@@ -426,16 +428,16 @@ export class PlayGateway implements OnGatewayInit {
       if (carteIds.length === 0) {
         carteIds = await this.computePlayableFallback(mancheId, joueurId);
       }
-      this.rt.emitToJoueur(joueurId, 'play:playable', { carteIds });
+      this.rt.emitToJoueur(joueurId, GameEvent.PlayPlayable, { carteIds });
     }
 
     // tapis / dernier pli / score (ok même pendant enchères, si vide ça n’affiche rien)
     const trick = await this.queries.getActiveTrick(mancheId);
-    if (trick) this.rt.emitToJoueur(joueurId, 'trick:state', trick);
+    if (trick) this.rt.emitToJoueur(joueurId, GameEvent.TrickState, trick);
 
     const prev = await this.trick.previousTrick(mancheId);
     if (prev?.cartes?.length) {
-      this.rt.emitToJoueur(joueurId, 'trick:closed', {
+      this.rt.emitToJoueur(joueurId, GameEvent.TrickClosed, {
         cartes: prev.cartes,
         gagnantId: prev.gagnantId,
         numero: prev.numero,
@@ -443,7 +445,7 @@ export class PlayGateway implements OnGatewayInit {
     }
 
     const live = await this.trick.scoreLive(mancheId);
-    this.rt.emitToJoueur(joueurId, 'score:live', live);
+    this.rt.emitToJoueur(joueurId, GameEvent.ScoreLive, live);
 
     if (turn?.beloteJoueurId) {
       this.rt.emitToJoueur(joueurId, 'belote:declared', {

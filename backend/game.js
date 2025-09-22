@@ -73,10 +73,12 @@
   // ---------- état ----------
   let isPlayingPhase = false; // false = enchères, true = phase de jeu
   let socket;
+  let lobbyNom = null
   let token = null;
   let joueurId = null;
   let partieId = Number(getQuery('partieId')) || null;
   let mancheId = Number(getQuery('mancheId')) || null;
+  let mancheNumero = null
   let booted = false;
   let lastSeats = null;       // [{seat, joueurId, username}]
   let mySeatIdx = null;       // 0..3 dans lastSeats
@@ -93,9 +95,9 @@
 
   const setPills = () => {
     const p = q('#partie-pill'), m = q('#manche-pill');
-    if (p) p.textContent = partieId ? `partieId=${partieId}` : '(pas de partie)';
-    if (m) m.textContent = mancheId ? `mancheId=${mancheId}` : '(pas de manche)';
-    renderAtout()
+    if (p) p.textContent = lobbyNom ? `${lobbyNom}` : '(pas de lobby)';
+    if (m) m.textContent = mancheNumero != null ? `Manche n°${mancheNumero}` : '(pas de manche)';
+    renderAtout();
   };
   setPills();
 
@@ -371,6 +373,8 @@
       log('🎉 joinedPartie', p);
       joueurId = p.joueurId ?? joueurId;
       if (p.mancheId) mancheId = p.mancheId;
+      if (p.numero) mancheNumero = p.numero ?? null;
+      lobbyNom = p.lobbyNom ?? null; 
       // nouvelle manche potentielle → reset annonces
       beloteByPlayer.clear();
       // 🔒 On bloque les boutons tant qu’on n’a pas reçu l’état
@@ -496,13 +500,13 @@
     socket.on('hand:state', (payload) => {
       if (payload.mancheId && payload.mancheId !== mancheId) {
         mancheId = payload.mancheId;
-        // nouvelle manche → reset annonces
         beloteByPlayer.clear();
-        setPills();
       }
+      if (payload.mancheNumero != null) mancheNumero = payload.mancheNumero; // 👈 new
+      setPills();
+
       myHand = payload.cartes || [];
       renderMyHand(myHand);
-
       requestPlayableIfMyTurn();
       retryPlayableIfMissing(500);
     });
@@ -546,6 +550,10 @@
     });
     socket.on('manche:ended', (end) => {
       log('🏁 manche:ended', end);
+      if (end?.nextManche) {
+        mancheId = end.nextManche.id;
+        mancheNumero = end.nextManche.numero;
+      }
       if (end?.cumule) renderTotals(end.cumule.team1, end.cumule.team2);
 
       // 🚀 mini toast recap
@@ -574,9 +582,14 @@
       navDone = true;
 
       // 1) Message
-      const who = p?.winnerTeamNumero ? `Équipe ${p.winnerTeamNumero}` : '—';
-      const msg = `Partie terminée. Vainqueur: ${who}  (T1=${p?.totals?.team1 ?? '?'}, T2=${p?.totals?.team2 ?? '?'})`;
-      alert(msg);
+      let msg;
+      if (p?.reason === 'abandon') {
+        msg = `Partie abandonnée par un joueur.\nRetour au lobby…`;
+      } else {
+        const who = p?.winnerTeamNumero ? `Équipe ${p.winnerTeamNumero}` : '—';
+        msg = `Partie terminée. Vainqueur: ${who}  (T1=${p?.totals?.team1 ?? '?'}, T2=${p?.totals?.team2 ?? '?'})`;
+      }
+      alert(msg)
 
       // 2) Geler l’UI localement
       playableIds = new Set();
@@ -639,6 +652,16 @@
     log('➡️ bidding:place take_card', { mancheId });
   });
 
+  const btnQuit = q('#btn-quit');
+  if (btnQuit) {
+    btnQuit.addEventListener('click', () => {
+      if (!socket || !partieId) return;
+      const ok = confirm('Abandonner la partie en cours ? Tous les joueurs seront renvoyés au lobby.');
+      if (!ok) return;
+      log('➡️ game:abandon', { partieId });
+      socket.emit('game:abandon', { partieId });
+    });
+  }
   const btnChoose = q('#btn-choose');
   if (btnChoose) btnChoose.addEventListener('click', () => {
     if (!socket || !mancheId) return;

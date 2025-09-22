@@ -13,6 +13,7 @@ import { RealtimeService } from 'src/realtime/realtime.service';
 import { LobbyService } from 'src/lobby/lobby.service';
 import { FriendsService } from 'src/friends/friends.service';
 import type { SocketWithUser } from 'src/types/ws';
+import { GameEvent } from 'src/realtime/ws-events';
 
 @WebSocketGateway({ cors: true })
 @UseGuards(AuthGuardSocket)
@@ -44,7 +45,7 @@ export class LobbyGateway implements OnGatewayInit {
     await this.notifyFriendsLobbyChanged(client.user.sub, lobby.id)
 
     // informer le créateur
-    client.emit('lobby:joined', { lobbyId: lobby.id });
+    client.emit(GameEvent.LobbyJoined, { lobbyId: lobby.id });
 
     // état initial pour tous
     const members = [
