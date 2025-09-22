@@ -19,6 +19,7 @@ import { BiddingService } from 'src/bidding/bidding.service';
 import { BidType } from 'src/bidding/dto/create-bid.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PlayQueriesService } from 'src/play/play.queries';
+import type { SocketWithUser } from 'src/types/ws';
 
 @WebSocketGateway({ cors: true })
 @UseGuards(AuthGuardSocket)
@@ -53,8 +54,9 @@ export class BiddingGateway implements OnGatewayInit {
   @SubscribeMessage('bidding:getState')
   async getState(
     @MessageBody() data: { mancheId: number },
-    @ConnectedSocket() client: Socket & { user?: { sub: number } },
+    @ConnectedSocket() client: SocketWithUser,
   ) {
+    if (client?.user?.sub) this.rt.registerClient(client, client.user.sub)
     const state = await this.biddingService.getState(data.mancheId);
     const seats = await this.biddingService.getSeatsForManche(data.mancheId);
     const payload: BiddingStatePayload & {

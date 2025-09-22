@@ -14,7 +14,7 @@ export class AuthGuardSocket implements CanActivate {
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const client: Socket = context.switchToWs().getClient<Socket>();
@@ -59,24 +59,6 @@ export class AuthGuardSocket implements CanActivate {
       username: joueur.username,
       email: joueur.email,
     };
-
-    await this.prisma.joueur.update({
-      where: { id: joueur.id },
-      data: {
-        estConnecte: true,
-        derniereConnexion: new Date(),
-        connectionId: client.id,
-      },
-    });
-
-    client.once('disconnect', async () => {
-      try {
-        await this.prisma.joueur.update({
-          where: { id: joueur.id },
-          data: { estConnecte: false, connectionId: null },
-        });
-      } catch {}
-    });
 
     return true;
   }

@@ -1,72 +1,403 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
   <meta charset="UTF-8" />
   <title>Belote – Lobby</title>
   <base href="/backend/">
-  <!-- Strict, no inline scripts; only external files from self + CDNs -->
+
+  <!-- CSP stricte -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
     connect-src 'self' http://localhost:3000 ws://localhost:3000 https://dev-ic6hqtbqegunpxep.eu.auth0.com;
-    script-src 'self' https://cdn.socket.io https://cdn.auth0.com;
+    script-src 'self' https://cdn.socket.io https://cdn.auth0.com 'unsafe-inline' 'unsafe-hashes';
     style-src 'self' 'unsafe-inline';
     img-src 'self' data:;
     frame-src https://dev-ic6hqtbqegunpxep.eu.auth0.com;
   ">
   <link rel="icon" href="data:,">
+
   <style>
-    :root{--green:#0a7b45}
-    body{font-family:system-ui,sans-serif;background:var(--green);color:#fff;padding:20px}
-    .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .btn{padding:9px 12px;border-radius:10px;border:0;background:#fff;color:var(--green);font-weight:700;cursor:pointer}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:1000px;margin:16px auto 0}
-    .card{background:#ffffff12;border:1px solid #ffffff33;border-radius:14px;padding:16px}
-    ul{list-style:none;margin:0;padding:0}
-    #membres-list li{padding:6px 10px;border-bottom:1px solid #ffffff22}
-    #membres-list li:last-child{border-bottom:0}
-    #log{background:#0b0b0b;color:#9f9;padding:10px;min-height:200px;white-space:pre-wrap;font-family:monospace;border-radius:10px}
-    h1,h2{margin:0 0 10px}
-    small.muted{opacity:.75}
+    :root {
+      --bg: #0a7b45;
+      --card-bg: rgba(255, 255, 255, .08);
+      --card-border: rgba(255, 255, 255, .18);
+      --text: #fff;
+      --muted: rgba(255, 255, 255, .75);
+      --chip: #fff;
+      --chip-text: #0a7b45;
+      --ok: #22c55e;
+      --ko: #6b7280;
+      --shadow: 0 10px 30px rgba(0, 0, 0, .15);
+      --radius: 14px;
+      --radius-sm: 10px;
+      --gap: 16px;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 40% -10%, #12a56c 0%, var(--bg) 50%);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto
+    }
+
+    header.row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px
+    }
+
+    h1 {
+      margin: 0;
+      letter-spacing: .2px
+    }
+
+    .user-block {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    .btn {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 0;
+      cursor: pointer;
+      background: #fff;
+      color: var(--bg);
+      font-weight: 700;
+      box-shadow: var(--shadow)
+    }
+
+    .btn.secondary {
+      background: rgba(255, 255, 255, .9)
+    }
+
+    .btn.ghost {
+      background: transparent;
+      color: #fff;
+      border: 1px solid var(--card-border);
+      box-shadow: none
+    }
+
+    .btn.small {
+      padding: 6px 10px;
+      font-weight: 600
+    }
+
+    .grid {
+      display: grid;
+      gap: var(--gap);
+      grid-template-columns: 1.2fr .8fr
+    }
+
+    @media (max-width:900px) {
+      .grid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px;
+      backdrop-filter: blur(6px)
+    }
+
+    .card h2 {
+      margin: 0 0 10px
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px
+    }
+
+    .toolbar .spacer {
+      flex: 1
+    }
+
+    /* Notifications */
+    .notification-area {
+      position: relative;
+      display: inline-block
+    }
+
+    .notification-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background: #ff4757;
+      color: #fff;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold
+    }
+
+    .notifications-panel {
+      position: fixed;
+      top: 80px;
+      right: 24px;
+      width: 350px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+      z-index: 99999;
+      display: none;
+      max-height: 70vh;
+      overflow: hidden;
+      color: #111;
+      /* texte sombre lisible */
+    }
+
+    .notifications-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .25);
+      z-index: 99990;
+      display: none;
+    }
+
+    .notifications-header {
+      padding: 12px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #111
+    }
+
+    .notifications-container {
+      max-height: 360px;
+      overflow: auto;
+      padding: 12px;
+      color: #111;
+    }
+
+    .notification {
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 8px;
+      color: #111;
+    }
+
+    .notification.unread {
+      background: #f8ffff;
+      border-left: 3px solid #2185d0;
+    }
+
+    .notification.read {
+      opacity: .85;
+    }
+
+    .notification-time {
+      font-size: .8em;
+      color: #666;
+      margin-top: 4px
+    }
+
+    /* Lobby */
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0
+    }
+
+    #membres-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, .15)
+    }
+
+    #membres-list li:last-child {
+      border-bottom: 0
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--chip);
+      color: var(--chip-text);
+      font-weight: 700
+    }
+
+    /* Friends */
+    .friends-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px
+    }
+
+    .input {
+      flex: 1;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      outline: none
+    }
+
+    .friend {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, .12)
+    }
+
+    .friend:last-child {
+      border-bottom: 0
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      margin-right: 8px;
+      background: var(--ko)
+    }
+
+    .dot.ok {
+      background: var(--ok)
+    }
+
+    /* Debug logs */
+    details.debug {
+      grid-column: 1/-1
+    }
+
+    #log {
+      background: #0b0b0b;
+      color: #9f9;
+      padding: 10px;
+      min-height: 140px;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+      border-radius: var(--radius);
+      border: 1px solid #1f2937
+    }
+
+    .muted {
+      color: var(--muted)
+    }
   </style>
 </head>
+
 <body>
-  <div class="row" style="max-width:1000px;margin:0 auto">
-    <h1>Belote – Lobby</h1>
-    <div>
-      <span id="user-email" style="opacity:.9;margin-right:10px"></span>
-      <button id="btn-logout" class="btn">Se déconnecter</button>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="card">
-      <h2>Actions</h2>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        <button id="btn-connect"    class="btn">🔐 Se connecter (WS)</button>
-        <button id="btn-create"     class="btn">🎲 Créer lobby</button>
-        <button id="btn-join-name"  class="btn">Rejoindre par nom</button>
-        <button id="btn-leave"      class="btn">Quitter lobby</button>
-        <button id="btn-start"      class="btn">▶️ Lancer la partie</button>
-        <button id="btn-chat"       class="btn">💬 Chat lobby</button>
-        <button id="btn-clear"      class="btn">🧹 Nettoyer logs</button>
+  <div class="container">
+    <header class="row">
+      <h1>Belote – Lobby</h1>
+      <div class="user-block">
+        <span id="user-email" class="muted"></span>
+        <button id="btn-logout" class="btn ghost">Se déconnecter</button>
       </div>
-      <p><small class="muted">Les actions utilisent le token Auth0 stocké dans <code>sessionStorage.auth_token</code>.</small></p>
-    </div>
+    </header>
 
-    <div class="card">
-      <h2>Membres du lobby</h2>
-      <ul id="membres-list"></ul>
-    </div>
+    <!-- Actions -->
+    <section class="card" aria-label="Actions">
+      <div class="toolbar">
+        <button id="btn-connect" class="btn">🔐 Se connecter</button>
+        <button id="btn-create" class="btn">🎲 Créer un lobby</button>
+        <button id="btn-join-name" class="btn secondary">Rejoindre par nom</button>
+        <button id="btn-leave" class="btn ghost">Quitter lobby</button>
+        <button id="btn-start" class="btn">▶️ Lancer la partie</button>
 
-    <div class="card" style="grid-column:1/3">
-      <h2>Logs</h2>
-      <pre id="log"></pre>
+        <span class="spacer"></span>
+
+        <!-- Notifications trigger -->
+        <div class="notification-area">
+          <button id="btn-notifications" class="btn">
+            🔔 Notifications
+            <span id="notification-badge" class="notification-badge"></span>
+          </button>
+        </div>
+      </div>
+      <small class="muted">Ces actions utilisent le token Auth0 stocké dans
+        <code>sessionStorage.auth_token</code>.</small>
+    </section>
+
+    <!-- Panneau Notifications (fixe, au plus haut niveau du DOM) -->
+    <div id="notifications-panel" class="notifications-panel" role="dialog" aria-modal="false" aria-hidden="true"
+      aria-label="Notifications">
+      <div class="notifications-header">
+        <strong>Notifications</strong>
+        <button class="btn small" onclick="notificationManager && notificationManager.markAllAsRead()">Tout marquer
+          lu</button>
+      </div>
+      <div id="notifications-container" class="notifications-container">
+        <div style="padding:18px;text-align:center;color:#666;">Chargement…</div>
+      </div>
     </div>
+    <div id="notifications-backdrop" class="notifications-backdrop" aria-hidden="true"></div>
+
+    <!-- Grille principale -->
+    <main class="grid" role="main">
+      <!-- Lobby members -->
+      <section class="card" aria-label="Membres du lobby">
+        <h2>Membres du lobby <small id="lobby-name" class="muted" style="margin-left:6px;"></small></h2>
+        <ul id="membres-list"></ul>
+      </section>
+
+      <!-- Friends -->
+      <aside class="card" aria-label="Amis">
+        <h2>Amis</h2>
+        <div class="friends-head">
+          <input id="friend-username" class="input" placeholder="Ajouter par username…">
+          <button id="btn-friends-add" class="btn small">Ajouter</button>
+          <button id="btn-friends-refresh" class="btn small ghost" title="Rafraîchir">↻</button>
+        </div>
+        <ul id="friends-list"></ul>
+      </aside>
+
+      <!-- Logs dev -->
+      <details class="debug card">
+        <summary style="cursor:pointer;"><strong>🛠️ Journal développeur</strong> <span class="muted">(déployez)</span>
+        </summary>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+          <button id="btn-clear" class="btn small ghost">🧹 Nettoyer</button>
+          <small class="muted">Événements WS et diagnostics.</small>
+        </div>
+        <pre id="log"></pre>
+      </details>
+    </main>
   </div>
 
-  <!-- External scripts only (CSP compliant) -->
+  <!-- Scripts externes -->
   <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="lobby.js"></script>
 </body>
+
 </html>

@@ -1,11 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
-import { RealtimeService } from './realtime/realtime.service';
-import { IoAdapter } from '@nestjs/platform-socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { UsersService } from './users/users.service';
+import { WsAuthAdapter } from './auth/ws-auth.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
   // Validation globale des DTOs
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
@@ -18,6 +20,12 @@ async function bootstrap() {
     ], // ou ['http://localhost:5173'] plus tard pour le front
     credentials: true,
   });
+
+  //Adapter WS (auth au handshake)
+  const jwt = app.get(JwtService)
+  const users = app.get(UsersService)
+  app.useWebSocketAdapter(new WsAuthAdapter(app,jwt,users))
+
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

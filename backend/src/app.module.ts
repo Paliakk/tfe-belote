@@ -13,6 +13,9 @@ import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { GatewayModule } from './ws/ws.module';
 import { UsersModule } from './users/users.module';
+import { FriendsModule } from './friends/friends.module';
+import { NotificationsService } from './notifications/notifications.service';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,8 +30,10 @@ import { UsersModule } from './users/users.module';
     RealtimeModule,
     GatewayModule,
     UsersModule,
+    FriendsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, AuthService],
+  providers: [AppService, AuthService, NotificationsService],
 })
 export class AppModule {}

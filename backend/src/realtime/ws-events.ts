@@ -149,6 +149,7 @@ export interface LobbyJoinedPayload {
 }
 export interface LobbyStatePayload {
   lobbyId: number;
+  lobbyName?: string
   membres: { id: number; username: string }[];
 }
 export interface LobbyUpdatePayload {

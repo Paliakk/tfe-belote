@@ -12,4 +12,6 @@ export class CreateLobbyDto {
   @IsOptional()
   @IsString({ message: 'Le mot de passe doit être une chaîne si fourni.' })
   password?: string;
+
+  visibility?: 'public' | 'friends' | 'private'
 }

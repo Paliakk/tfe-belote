@@ -15,7 +15,7 @@ import { PlayService } from 'src/play/play.service';
 import { PlayQueriesService } from 'src/play/play.queries';
 import { TrickService } from 'src/play/services/trick.service';
 import { BiddingService } from 'src/bidding/bidding.service';
-import { subscribe } from 'diagnostics_channel';
+import type { SocketWithUser } from 'src/types/ws';
 import { GameService } from 'src/game/game.service';
 
 type PlayCardOngoing = {
@@ -163,11 +163,11 @@ export class PlayGateway implements OnGatewayInit {
   // === Demander les cartes jouables pour le joueur courant ===
   @SubscribeMessage('play:getPlayable')
   async getPlayable(
-    @ConnectedSocket() client: Socket & { user: { sub: number } },
+    @ConnectedSocket() client: SocketWithUser,
     @MessageBody() data: { mancheId: number },
   ) {
     try {
-      const joueurId = client.user.sub;
+      const joueurId = client.user!.sub;
       const mancheId = data.mancheId;
 
       // ⛔ garde-fou: pas de jouables tant que pas de preneur
@@ -207,11 +207,11 @@ export class PlayGateway implements OnGatewayInit {
   // === Jouer une carte ===
   @SubscribeMessage('play:card')
   async playCard(
-    @ConnectedSocket() client: Socket & { user: { sub: number } },
+    @ConnectedSocket() client: SocketWithUser,
     @MessageBody() data: { mancheId: number; carteId: number },
   ) {
     try {
-      const joueurId = client.user.sub;
+      const joueurId = client.user!.sub;
       const { mancheId, carteId } = data;
 
       // ⛔ garde-fou: pas de jeu de carte tant qu'il n'y a pas de preneur
@@ -366,19 +366,20 @@ export class PlayGateway implements OnGatewayInit {
   }
   @SubscribeMessage('score:getLive')
   async scoreGetLive(
-    @ConnectedSocket() client: Socket & { user: { sub: number } },
+    @ConnectedSocket() client: SocketWithUser,
     @MessageBody() data: { mancheId: number },
   ) {
     const score = await this.trick.scoreLive(data.mancheId);
     // envoie le score uniquement à l'appelant
-    this.rt.emitToJoueur(client.user.sub, 'score:live', score);
+    this.rt.emitToJoueur(client.user!.sub, 'score:live', score);
   }
   @SubscribeMessage('ui:rehydrate')
   async rehydrate(
-    @ConnectedSocket() client: Socket & { user: { sub: number } },
+    @ConnectedSocket() client: SocketWithUser,
     @MessageBody() data: { mancheId: number },
   ) {
-    const joueurId = client.user.sub;
+    if (client?.user?.sub) this.rt.registerClient(client, client.user.sub)
+    const joueurId = client.user!.sub;
     const mancheId = data.mancheId;
 
     const [bid, seats] = await Promise.all([

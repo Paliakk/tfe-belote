@@ -12,7 +12,21 @@ function normalizeUsernameSeed(s?: string | null): string {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
+
+  async findByAuth0Sub(auth0Sub: string | number) {
+    if (typeof auth0Sub === 'number') {
+      return this.prisma.joueur.findUnique({
+        where: { id: auth0Sub },
+        select: { id: true, username: true, email: true, auth0Sub: true },
+      });
+    }
+    return this.prisma.joueur.findUnique({
+      where: { auth0Sub }, // string
+      select: { id: true, username: true, email: true, auth0Sub: true },
+    });
+  }
+
 
   async ensureFromAuth0(u: {
     sub: string;
@@ -101,6 +115,12 @@ export class UsersService {
         avatarUrl: u.picture ?? null,
         estConnecte: false, // mis à true par le guard WS
       },
+    });
+  }
+  async findById(id: number) {
+    return this.prisma.joueur.findUnique({
+      where: { id },
+      select: { id: true, username: true, email: true, auth0Sub: true },
     });
   }
 }
