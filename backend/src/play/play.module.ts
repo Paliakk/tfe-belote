@@ -6,6 +6,7 @@ import { PlayQueriesService } from './play.queries';
 import { TrickService } from './services/trick.service';
 import { MancheModule } from 'src/manche/manche.module';
 import { PartieGuard } from 'src/common/guards/partie.guard';
+import { GameModule } from 'src/game/game.module';
 
 @Module({
   providers: [
@@ -16,7 +17,7 @@ import { PartieGuard } from 'src/common/guards/partie.guard';
     PartieGuard,
   ],
   controllers: [],
-  imports: [PrismaModule, MancheModule],
+  imports: [PrismaModule, MancheModule,GameModule],
   exports: [PlayService, RulesService, PlayQueriesService, TrickService],
 })
 export class PlayModule {}

@@ -15,7 +15,7 @@ export class GameService {
     private readonly lobbyService: LobbyService,
     private readonly rt: RealtimeService,
   ) { }
-  
+  private timeoutStreak = new Map<string, number>();
 
   async quitGame(partieId: number, joueurId: number) {
     return this.prisma.$transaction(
@@ -86,6 +86,7 @@ export class GameService {
       where: { id: partieId },
       data: { statut: 'finie' },
     });
+    this.clearTimeoutsForPartie(partieId);
 
     const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
     const lobbyId = reused?.lobbyId ?? null;
@@ -115,48 +116,66 @@ export class GameService {
   }
 
   async abandonPartie(partieId: number, joueurId: number) {
-  // (option) vérifier que le joueur est bien membre de la partie
-  const isMember = await this.prisma.equipeJoueur.findFirst({
-    where: { equipe: { partieId }, joueurId },
-    select: { equipeId: true },
-  });
-  if (!isMember) {
-    // on peut soit throw, soit ignorer silencieusement
-    // throw new ForbiddenException('Vous ne participez pas à cette partie.');
-  }
-
-  // statut 'abandonnee' (enum PartieStatut)
-  await this.prisma.partie.update({
-    where: { id: partieId },
-    data: { statut: 'abandonnee' },
-  });
-
-  // On réutilise le lobby et on notifie les clients comme pour fin de partie
-  const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
-  const lobbyId = reused?.lobbyId ?? null;
-
-  // Notifier la fin pour l’UI (raison abandon)
-  this.rt.emitToPartie(partieId, 'game:over', {
-    partieId,
-    lobbyId,
-    reason: 'abandon',           // 👈 new (front peut montrer un message différent)
-    winnerTeamNumero: null,      // inconnu / sans objet
-    totals: null as Totals,
-  });
-
-  if (lobbyId != null) {
-    await this.rt.movePartieToLobby(partieId, lobbyId);
-    this.rt.emitToLobby(lobbyId, 'lobby:state', {
-      lobbyId,
-      membres: reused!.membres,
+    // (option) vérifier que le joueur est bien membre de la partie
+    const isMember = await this.prisma.equipeJoueur.findFirst({
+      where: { equipe: { partieId }, joueurId },
+      select: { equipeId: true },
     });
-    this.rt.emitToLobby(lobbyId, 'lobby:updated', {
-      lobbyId,
-      membres: reused!.membres,
-      statut: 'en_attente',
-    });
-  }
+    if (!isMember) {
+      // on peut soit throw, soit ignorer silencieusement
+      // throw new ForbiddenException('Vous ne participez pas à cette partie.');
+    }
 
-  return { ok: true, lobbyId };
-}
+    // statut 'abandonnee' (enum PartieStatut)
+    await this.prisma.partie.update({
+      where: { id: partieId },
+      data: { statut: 'abandonnee' },
+    });
+
+    // On réutilise le lobby et on notifie les clients comme pour fin de partie
+    const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
+    const lobbyId = reused?.lobbyId ?? null;
+    this.clearTimeoutsForPartie(partieId);
+    // Notifier la fin pour l’UI (raison abandon)
+    this.rt.emitToPartie(partieId, 'game:over', {
+      partieId,
+      lobbyId,
+      reason: 'abandon',           // 👈 new (front peut montrer un message différent)
+      by: joueurId,
+      winnerTeamNumero: null,      // inconnu / sans objet
+      totals: null as Totals,
+    });
+
+    if (lobbyId != null) {
+      await this.rt.movePartieToLobby(partieId, lobbyId);
+      this.rt.emitToLobby(lobbyId, 'lobby:state', {
+        lobbyId,
+        membres: reused!.membres,
+      });
+      this.rt.emitToLobby(lobbyId, 'lobby:updated', {
+        lobbyId,
+        membres: reused!.membres,
+        statut: 'en_attente',
+      });
+    }
+
+    return { ok: true, lobbyId };
+  }
+  private key(partieId: number, joueurId: number) {
+    return `${partieId}:${joueurId}`;
+  }
+  public incTimeout(partieId: number, joueurId: number): number {
+    const k = this.key(partieId, joueurId);
+    const v = (this.timeoutStreak.get(k) ?? 0) + 1;
+    this.timeoutStreak.set(k, v);
+    return v;
+  }
+  public resetTimeout(partieId: number, joueurId: number) {
+    this.timeoutStreak.delete(this.key(partieId, joueurId));
+  }
+  public clearTimeoutsForPartie(partieId: number) {
+    for (const k of Array.from(this.timeoutStreak.keys())) {
+      if (k.startsWith(partieId + ':')) this.timeoutStreak.delete(k);
+    }
+  }
 }

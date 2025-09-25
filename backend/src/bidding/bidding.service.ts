@@ -10,6 +10,12 @@ import { BidType, CreateBidDto } from './dto/create-bid.dto';
 import { Prisma } from '@prisma/client';
 import { MancheService } from 'src/manche/manche.service';
 import { PartieGuard } from 'src/common/guards/partie.guard';
+import { GameService } from 'src/game/game.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
+import { PlayService } from 'src/play/play.service';
+
+const TURN_TIMEOUT_MS = Number(process.env.TURN_TIMEOUT_MS ?? 20000);
+const TURN_GRACE_MS = Number(process.env.TURN_GRACE_MS ?? 200);
 
 @Injectable()
 export class BiddingService {
@@ -17,7 +23,10 @@ export class BiddingService {
     private readonly prisma: PrismaService,
     private readonly mancheService: MancheService,
     private readonly partieGuard: PartieGuard,
-  ) {}
+    private readonly gameService: GameService,
+    private readonly rt: RealtimeService,
+    private readonly playService: PlayService
+  ) { }
 
   // Etat
   async getState(mancheId: number) {
@@ -49,10 +58,10 @@ export class BiddingService {
         : null,
       carteRetournee: manche.carteRetournee
         ? {
-            id: manche.carteRetournee.id,
-            valeur: manche.carteRetournee.valeur,
-            couleurId: manche.carteRetournee.couleurId,
-          }
+          id: manche.carteRetournee.id,
+          valeur: manche.carteRetournee.valeur,
+          couleurId: manche.carteRetournee.couleurId,
+        }
         : null,
       historique: manche.encheres.map((e) => ({
         joueur: e.joueur,
@@ -63,12 +72,15 @@ export class BiddingService {
       seats,
     };
   }
+  // ---- TIMER STATE (enchères) ----
+  private biddingTimers = new Map<number, NodeJS.Timeout>(); // clé: partieId
+
   // Action
-  async placeBid(mancheId: number, joueurId: number, dto: CreateBidDto) {
+  async placeBid(mancheId: number, joueurId: number, dto: CreateBidDto, isAuto = false) {
     await this.partieGuard.ensureEnCoursByMancheId(mancheId);
     const { type, couleurAtoutId } = dto;
 
-    return this.prisma.$transaction(
+    const res = await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         // 0 Charger la manche + la partie + les sièges (ordreSiege)
         const manche = await tx.manche.findUnique({
@@ -87,6 +99,11 @@ export class BiddingService {
           throw new NotFoundException(`Manche ${mancheId} introuvable.`);
         if (manche.partie.statut !== 'en_cours') {
           throw new BadRequestException(`La partie n'est pas en cours.`);
+        }
+        const partieId = manche.partieId;
+        this.clearBiddingTimer(partieId);
+        if (!isAuto) {
+          this.gameService.resetTimeout(partieId, joueurId);
         }
 
         //Vérifier que cette manche est bien la dernière de la partie
@@ -176,34 +193,29 @@ export class BiddingService {
               ? manche.carteRetournee!.couleurId
               : couleurAtoutId!;
 
-          //Fixer preneur et atout
+          // Fixer preneur, atout, ET faire DEMARRER le PRENEUR (joueurId)
           await tx.manche.update({
             where: { id: mancheId },
             data: {
               preneurId: joueurId,
               couleurAtoutId: atoutId,
+              joueurActuelId: joueurId, // 👈 le preneur commence la phase de jeu
+              tourActuel: 2,            // (optionnel) on force la fin d’enchères
             },
           });
-          //Distrib finale : preneur (2 + carte retournée), les autres 3
+
+          // Distrib finale : preneur (2 + carte retournée), les autres 3
           await this.completeDistributionAfterTake(tx, manche, joueurId);
 
-          //Déterminer le 1er joueur de jeu (à gauche du donneur) pour l'UC07
-          const dealerSeat = seats.find(
-            (s) => s.joueurId === (manche.donneurJoueurId as number),
-          )!.seat;
-          const leftOfDealerId = seats[(dealerSeat + 1) % 4].joueurId;
-
-          //MAJ état joueurActuel au démarrage du jeu (fin enchères)
-          await tx.manche.update({
-            where: { id: mancheId },
-            data: { joueurActuelId: leftOfDealerId },
-          });
+          // IMPORTANT: on ne démarre pas de timer d’ENCHÈRES ici (fini)
+          // On remonte l'info, on émettra les events + timer de jeu après la transaction
           return {
             message: `Preneur fixé: joueur ${joueurId}, atout=${atoutId}. Distribution complétée.`,
             partieId: manche.partieId,
             atoutId,
             preneurId: joueurId,
             mancheId,
+            _biddingEnded: true, // 👈 marqueur interne pour post-tx
           };
         }
         //3. Sinon, c'est un "pass" -> avancer au joueur suivant ou changer de tour
@@ -226,6 +238,7 @@ export class BiddingService {
               where: { id: mancheId },
               data: { tourActuel: 2, joueurActuelId: leftOfDealerId },
             });
+            this.startBiddingTimer(partieId, mancheId, leftOfDealerId)
             return {
               message: `Tour 1 terminé sans preneur. Passage au tour 2.`,
               partieId: manche.partieId,
@@ -248,6 +261,7 @@ export class BiddingService {
             where: { id: mancheId },
             data: { joueurActuelId: nextPlayerId },
           });
+          this.startBiddingTimer(partieId, mancheId, nextPlayerId)
           return {
             message: `Pass. Joueur suivant: ${nextPlayerId}.`,
             partieId: manche.partieId,
@@ -256,6 +270,28 @@ export class BiddingService {
       },
       { isolationLevel: 'Serializable' },
     );
+
+    // === Post-transaction side effects ===
+    // Si les enchères viennent de se terminer, on informe tout le monde et on démarre le timer de JEU
+    if ((res as any)?._biddingEnded && res.partieId && res.mancheId && res.preneurId) {
+      // 1) prévenir le front que les enchères sont finies
+      this.rt.emitToPartie(res.partieId, 'bidding:ended', {
+        mancheId: res.mancheId,
+        atoutId: res.atoutId,
+        preneurId: res.preneurId,
+      });
+
+      // 2) annoncer le premier joueur de JEU (le preneur)
+      this.rt.emitToPartie(res.partieId, 'turn:state', {
+        mancheId: res.mancheId,
+        joueurActuelId: res.preneurId,
+      });
+
+      // 3) démarrer le timer de JEU (pas d’enchère) côté serveur
+      this.playService.armPlayTimer(res.partieId, res.mancheId, res.preneurId);
+    }
+
+    return res;
   }
   // Utils
   private nextPlayerId(
@@ -445,4 +481,98 @@ export class BiddingService {
       username: s.joueur.username,
     }));
   }
+
+  private clearBiddingTimer(partieId: number) {
+    const t = this.biddingTimers.get(partieId);
+    if (t) {
+      clearTimeout(t);
+      this.biddingTimers.delete(partieId);
+    }
+  }
+
+  private startBiddingTimer(partieId: number, mancheId: number, joueurId: number) {
+    this.clearBiddingTimer(partieId);
+    const deadline = Date.now() + TURN_TIMEOUT_MS;
+    this.rt.emitTurnDeadline(partieId, {
+      mancheId, joueurId, phase: 'bidding', deadlineTs: deadline, remainingMs: TURN_TIMEOUT_MS,
+    });
+
+    const handle = setTimeout(async () => {
+      try {
+        // petite grâce
+        await new Promise(r => setTimeout(r, TURN_GRACE_MS));
+
+        // ✅ Re-check: on NE lit PAS un "manche.statut" (qui n'existe pas chez toi).
+        // On valide seulement que c'est TOUJOURS au même joueur ET que la partie est encore en cours.
+        const m = await this.prisma.manche.findUnique({
+          where: { id: mancheId },
+          select: {
+            joueurActuelId: true,
+            partie: { select: { statut: true } },
+          },
+        });
+        if (!m) return;
+        if (m.partie.statut !== 'en_cours') return;
+        if (m.joueurActuelId !== joueurId) return;
+
+        // log UI
+        this.rt.emitTurnTimeout(partieId, { mancheId, joueurId, phase: 'bidding' });
+
+        // 👉 auto-PASS
+        await this.placeBid(mancheId, joueurId, { type: BidType.PASS }, true /* isAuto */)
+
+        // 💡 IMPORTANT (chemin "timer"): diffuser l'état mis à jour à toute la table,
+        // car ici on ne passe PAS par le gateway.
+        const updated = await this.getState(mancheId);
+        this.rt.emitToPartie(partieId, 'bidding:state', {
+          mancheId: updated.mancheId,
+          joueurActuelId: updated.joueurActuelId,
+          tourActuel: updated.tourActuel as 1 | 2,
+          encheres: updated.historique.map((e) => ({
+            joueurId: e.joueur.id,
+            type: e.type,
+            couleurAtoutId: e.couleurAtoutId ?? undefined,
+            encherePoints: undefined,
+            createdAt: e.at.toISOString(),
+          })),
+          carteRetournee: updated.carteRetournee
+            ? {
+              id: updated.carteRetournee.id,
+              valeur: updated.carteRetournee.valeur,
+              couleurId: updated.carteRetournee.couleurId,
+            }
+            : null,
+        });
+
+        // streak
+        const count = this.gameService.incTimeout(partieId, joueurId);
+        if (count >= 2) {
+          await this.gameService.abandonPartie(partieId, joueurId);
+          this.clearBiddingTimer(partieId);
+          return;
+        }
+
+        // 👉 Le timer du joueur suivant est relancé par placeBid() lui-même
+        // (on n’enchaîne pas ici pour éviter les doublons).
+      } catch (e) {
+        console.error('[BiddingTimer] auto-pass error', e);
+      }
+    }, TURN_TIMEOUT_MS);
+
+    this.biddingTimers.set(partieId, handle);
+  }
+
+  public async armBiddingTimerForManche(mancheId: number) {
+    const m = await this.prisma.manche.findUnique({
+      where: { id: mancheId },
+      select: { partieId: true, preneurId: true, joueurActuelId: true, partie: { select: { statut: true } } },
+    });
+    if (!m) return;
+    if (m.partie.statut !== 'en_cours') return; // ✅ check sur la partie, pas la manche
+    if (m.preneurId) return; // plus en enchères
+    if (!m.joueurActuelId) return;
+
+    this.startBiddingTimer(m.partieId, mancheId, m.joueurActuelId);
+  }
+
 }

@@ -83,6 +83,8 @@
   let lastSeats = null;       // [{seat, joueurId, username}]
   let mySeatIdx = null;       // 0..3 dans lastSeats
   let navDone = false
+  let deadlineTs = null;
+  let timerInterval = null;
 
   // enchères / tour
   let lastBiddingState = null;
@@ -374,7 +376,7 @@
       joueurId = p.joueurId ?? joueurId;
       if (p.mancheId) mancheId = p.mancheId;
       if (p.numero) mancheNumero = p.numero ?? null;
-      lobbyNom = p.lobbyNom ?? null; 
+      lobbyNom = p.lobbyNom ?? null;
       // nouvelle manche potentielle → reset annonces
       beloteByPlayer.clear();
       // 🔒 On bloque les boutons tant qu’on n’a pas reçu l’état
@@ -510,6 +512,20 @@
       requestPlayableIfMyTurn();
       retryPlayableIfMissing(500);
     });
+    socket.on('turn:deadline', (p) => {
+      // p = { mancheId, joueurId, phase, deadlineTs }
+      // On affiche le timer pour TOUS, même si ce n’est pas mon tour.
+      startTurnTimerClient(p.deadlineTs);
+    });
+
+    socket.on('turn:timeout', (p) => {
+      // petit toast
+      showToast(`⏳ Temps écoulé pour ${p.joueurId === joueurId ? 'vous' : 'un joueur'} (${p.phase === 'bidding' ? 'enchères' : 'jeu'})`, 2000);
+    });
+
+    socket.on('manche:ended', () => stopTurnTimerClient());
+    socket.on('donne:relancee', () => stopTurnTimerClient());
+    socket.on('game:over', () => stopTurnTimerClient());
 
     // === Pli courant (tapis) ===
     socket.on('trick:state', (p) => { renderTrick(p); });
@@ -744,6 +760,38 @@
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => { el.remove(); }, ms);
+  }
+  function updateTurnTimerUI() {
+    const fill = q('#turn-timer-fill');
+    const secs = q('#turn-timer-secs');
+    if (!fill || !secs || deadlineTs == null) return;
+
+    const now = Date.now();
+    const total = Number((window.TURN_TIMEOUT_MS ?? 20000));
+    const remain = Math.max(0, deadlineTs - now);
+    const pct = Math.max(0, Math.min(100, (remain / total) * 100));
+
+    fill.style.width = pct + '%';
+    secs.textContent = Math.ceil(remain / 1000) + 's';
+
+    if (remain <= 0) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function startTurnTimerClient(deadline) {
+    deadlineTs = deadline;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    updateTurnTimerUI();
+    timerInterval = setInterval(updateTurnTimerUI, 200);
+  }
+
+  function stopTurnTimerClient() {
+    deadlineTs = null;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    const fill = q('#turn-timer-fill'); if (fill) fill.style.width = '0%';
+    const secs = q('#turn-timer-secs'); if (secs) secs.textContent = '--s';
   }
 
   // auto-join au chargement

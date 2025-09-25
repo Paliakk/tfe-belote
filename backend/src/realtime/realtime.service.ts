@@ -176,6 +176,27 @@ export class RealtimeService {
   ) {
     this.emitToJoueur(joueurId, 'hand:state', payload);
   }
+  /** Informe tous les joueurs d’une partie de la deadline du tour courant */
+  emitTurnDeadline(partieId: number, payload: {
+    mancheId: number;
+    joueurId: number;           // à qui c’est de jouer
+    phase: 'bidding' | 'play';
+    deadlineTs: number;         // Date.now() + TURN_TIMEOUT_MS
+    remainingMs?: number;       // optionnel, pour debug
+  }) {
+    if (!this.server) return;
+    this.emitToPartie(partieId, 'turn:deadline', payload);
+  }
+
+  /** Petit event loggable quand le timer expire (avant l’auto-action) */
+  emitTurnTimeout(partieId: number, payload: {
+    mancheId: number;
+    joueurId: number;
+    phase: 'bidding' | 'play';
+  }) {
+    if (!this.server) return;
+    this.emitToPartie(partieId, 'turn:timeout', payload);
+  }
 
   /**
    * Diffuse les mains complètes de la manche en cours à TOUS les joueurs d'une partie.

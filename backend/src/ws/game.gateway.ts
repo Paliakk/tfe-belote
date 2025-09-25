@@ -72,6 +72,14 @@ export class GameGateway implements OnGatewayInit {
 
     // 🔁 envoie l’état d’enchères initial
     const st = await this.biddingService.getState(mancheId);
+    if (!st.preneurId && st.joueurActuelId) {
+      // on récupère partieId via la manche (prisma rapide)
+      const p = await this.prisma.manche.findUnique({ where: { id: mancheId }, select: { partieId: true } });
+      if (p?.partieId) {
+        // lance (ou relance) le timer d’enchères pour le joueur courant
+        await this.biddingService.armBiddingTimerForManche(mancheId);
+      }
+    }
     this.rt.emitToJoueur(joueurId, 'bidding:state', {
       mancheId: st.mancheId,
       joueurActuelId: st.joueurActuelId,

@@ -58,7 +58,7 @@ export class PlayGateway implements OnGatewayInit {
     private readonly trick: TrickService,
     private readonly bidding: BiddingService,
     private readonly gameService: GameService,
-  ) {}
+  ) { }
 
   afterInit(server: Server) {
     this.rt.setServer(server);
@@ -226,8 +226,18 @@ export class PlayGateway implements OnGatewayInit {
         return { ok: false, error: 'bidding-not-finished' };
       }
 
-      const res = await this.play.playCard(mancheId, joueurId, carteId);
+      // 🔒 REFUS SI DEADLINE EXPIRÉE (serveur > client)
       const partieId = await this.getPartieIdFromManche(mancheId);
+      if (this.play.isTurnExpired(partieId, mancheId, joueurId)) {
+        // on ignore poliment: le timer va auto-jouer/avancer
+        client.emit('error', {
+          scope: 'play:card',
+          message: 'Temps écoulé — action refusée (auto-jeu en cours).',
+        });
+        return { ok: false, error: 'turn-deadline-expired' };
+      }
+
+      const res = await this.play.playCard(mancheId, joueurId, carteId);
 
       // 0) Belote/Rebelote visuel (optionnel mais demandé)
       if ('beloteEvent' in res && res.beloteEvent) {
