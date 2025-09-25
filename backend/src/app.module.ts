@@ -16,6 +16,8 @@ import { UsersModule } from './users/users.module';
 import { FriendsModule } from './friends/friends.module';
 import { NotificationsService } from './notifications/notifications.service';
 import { NotificationsModule } from './notifications/notifications.module';
+import { StatsService } from './stats/stats.service';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -32,8 +34,9 @@ import { NotificationsModule } from './notifications/notifications.module';
     UsersModule,
     FriendsModule,
     NotificationsModule,
+    StatsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, AuthService, NotificationsService],
+  providers: [AppService, AuthService, NotificationsService, StatsService],
 })
 export class AppModule {}

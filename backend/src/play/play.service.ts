@@ -421,10 +421,16 @@ export class PlayService {
 
         // 1) Compter le timeout
         const count = this.gameService.incTimeout(partieId, joueurId);
+        await this.prisma.playerEvent.create({
+          data: { joueurId, partieId, mancheId, type: 'TURN_TIMEOUT' },
+        })
 
         // 2) 🛑 Si c'est le 2e -> abandon immédiat (ne tente pas d'auto-play)
         if (count >= 2) {
           await this.gameService.abandonPartie(partieId, joueurId);
+          await this.prisma.playerEvent.create({
+            data: { joueurId, partieId, mancheId, type: 'ABANDON_TRIGGERED' },
+          })
           this.clearPlayTimer(partieId);
           return;
         }

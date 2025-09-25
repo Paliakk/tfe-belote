@@ -312,8 +312,327 @@
     .muted {
       color: var(--muted)
     }
+
+    /* Backdrop flou */
+    #stats-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .5);
+      backdrop-filter: blur(6px);
+      z-index: 900;
+    }
+
+    /* Modale container */
+    #stats-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 901;
+    }
+
+    /* Carte principale */
+    #stats-modal .stats-card {
+      width: min(1200px, 96vw);
+      max-height: 90vh;
+      overflow: auto;
+      background: #171a21;
+      color: #e8eef4;
+      border: 1px solid #263041;
+      border-radius: 14px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+      padding: 16px 18px 20px;
+    }
+
+    /* Close bouton */
+    #stats-modal .stats-close {
+      position: sticky;
+      top: 8px;
+      float: right;
+      border: none;
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: #0b1220;
+      color: #e8eef4;
+      font-size: 22px;
+      line-height: 36px;
+    }
+
+    /* Structure interne (styles light) */
+    .stats-header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .stats-controls label {
+      margin-right: 8px;
+      font-size: 14px;
+    }
+
+    .stats-controls input,
+    .stats-controls button {
+      background: #0b1220;
+      border: 1px solid #1c2535;
+      color: #e8eef4;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+
+    .stats-controls button {
+      background: linear-gradient(180deg, #0ea5e9, #2563eb);
+      border: none;
+      cursor: pointer;
+    }
+
+    .stats-body {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 14px;
+    }
+
+    .stats-row .stats-grow {
+      grid-column: 1 / span 1;
+    }
+
+    .stats-panel {
+      background: #101420;
+      border: 1px solid #1c2433;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .stats-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .stats-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      background: #0f1320;
+      border: 1px solid #1c2433;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .kpi h4 {
+      margin: 0 0 6px;
+      font: 600 12px/1.3 ui-sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: #aab6c3;
+    }
+
+    .kpi .val {
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px
+    }
+
+    .table th {
+      color: #aab6c3;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      padding: 0 10px
+    }
+
+    .table td {
+      padding: 10px;
+      background: #0f1320;
+      border-top: 1px solid #1c2433;
+      border-bottom: 1px solid #1c2433
+    }
+
+    .table tr td:first-child {
+      border-left: 1px solid #1c2433;
+      border-radius: 10px 0 0 10px
+    }
+
+    .table tr td:last-child {
+      border-right: 1px solid #1c2433;
+      border-radius: 0 10px 10px 0;
+      text-align: right
+    }
+
+    .bar {
+      height: 8px;
+      background: #0b1220;
+      border: 1px solid #1c2030;
+      border-radius: 999px;
+      overflow: hidden
+    }
+
+    .bar>i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #2dd4bf, #60a5fa)
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #0e1726;
+      border: 1px solid #1b2433;
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: #c8d3df
+    }
+
+    .muted {
+      color: #9aa4af
+    }
+
+    .ok {
+      color: #22c55e
+    }
+
+    .warn {
+      color: #f59e0b
+    }
+
+    .ko {
+      color: #ef4444
+    }
+
+    @media (max-width: 1100px) {
+      .stats-kpis {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+
+      .stats-row {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-row .stats-grow {
+        grid-column: auto;
+      }
+    }
   </style>
 </head>
+<!-- Backdrop flou -->
+<div id="stats-backdrop" style="display:none;"></div>
+
+<!-- Modale stats -->
+<div id="stats-modal" style="display:none;">
+  <div class="stats-card">
+    <button class="stats-close" aria-label="Fermer">×</button>
+    <header class="stats-header">
+      <h2>📈 Statistiques joueur</h2>
+      <div class="stats-controls">
+        <label>Joueur&nbsp;ID <input id="stats-inp-id" type="number" min="1" /></label>
+        <label>De <input id="stats-inp-from" type="date" /></label>
+        <label>À <input id="stats-inp-to" type="date" /></label>
+        <button id="stats-btn-load">Charger</button>
+      </div>
+    </header>
+
+    <main class="stats-body">
+      <section id="stats-kpis" class="stats-kpis"></section>
+
+      <section class="stats-row">
+        <div class="stats-panel stats-grow">
+          <div class="stats-panel-head">
+            <h3>Résumé des performances</h3>
+            <span id="stats-range" class="muted"></span>
+          </div>
+          <div class="stats-cards">
+            <div class="kpi">
+              <h4>Victoires</h4>
+              <div class="val" id="stats-wins">—</div>
+              <small class="muted">Taux victoire: <b id="stats-winRate">—</b></small>
+            </div>
+            <div class="kpi">
+              <h4>Points</h4>
+              <div class="val" id="stats-ptsManche">—</div>
+              <small class="muted">Δ/manche <b id="stats-diffManche">—</b></small>
+            </div>
+            <div class="kpi">
+              <h4>Prises</h4>
+              <div class="val" id="stats-takes">—</div>
+              <small class="muted">Réussite: <b id="stats-takesRate">—</b></small>
+            </div>
+            <div class="kpi">
+              <h4>Discipline</h4>
+              <div class="val" id="stats-afk">—</div>
+              <small class="muted">Abandons: <b id="stats-abandons">—</b></small>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-panel">
+          <h3>Atouts favoris & efficacité</h3>
+          <div id="stats-atoutsWrap"></div>
+        </div>
+      </section>
+
+      <section class="stats-row">
+        <div class="stats-panel stats-grow">
+          <h3>Efficacité par atout (quand preneur)</h3>
+          <table class="table" id="stats-tbl-color">
+            <thead>
+              <tr>
+                <th>Atout</th>
+                <th>Tentatives</th>
+                <th>Succès</th>
+                <th>Taux</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="stats-panel stats-grow">
+          <h3>Plis & Bonus</h3>
+          <div class="stats-cards">
+            <div class="kpi">
+              <h4>Plis gagnés</h4>
+              <div class="val" id="stats-plisTot">—</div>
+              <small class="muted">/manche <b id="stats-plisAvg">—</b> · 8e pli <b id="stats-last8">—</b></small>
+            </div>
+            <div class="kpi">
+              <h4>Belote</h4>
+              <div class="val" id="stats-belote">—</div>
+              <small class="muted">Capot <b id="stats-capot">—</b> · 10 de der <b id="stats-dix">—</b></small>
+            </div>
+          </div>
+          <div style="margin-top:10px">
+            <div class="muted" style="margin-bottom:6px">Points en tant que preneur</div>
+            <div class="bar"><i id="stats-bar-taker" style="width:0%"></i></div>
+            <div class="muted" style="margin:6px 0">Points en tant que non-preneur</div>
+            <div class="bar"><i id="stats-bar-nontaker" style="width:0%"></i></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
 
 <body>
   <div class="container">
@@ -333,6 +652,7 @@
         <button id="btn-join-name" class="btn secondary">Rejoindre par nom</button>
         <button id="btn-leave" class="btn ghost">Quitter lobby</button>
         <button id="btn-start" class="btn">▶️ Lancer la partie</button>
+        <button id="btn-my-stats" class="pill">📈 Mes stats</button>
 
         <span class="spacer"></span>
 
@@ -398,6 +718,7 @@
   <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="lobby.js"></script>
+  <script src="/backend/stats-modal.js"></script>
 </body>
 
 </html>

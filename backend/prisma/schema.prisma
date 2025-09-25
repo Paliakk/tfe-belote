@@ -38,7 +38,7 @@ model Joueur {
   createurLobbys    Lobby[]        @relation("CreateurLobby")
   pliCartes         PliCarte[]
   lobbys            LobbyJoueur[]
-  
+
   notificationsSent     Notification[] @relation("NotificationSender")
   notificationsReceived Notification[] @relation("NotificationReceiver")
 
@@ -49,6 +49,7 @@ model Joueur {
   friendshipsB           Friendship[]    @relation("FriendshipB")
   lobbyInvitesSent       LobbyInvite[]   @relation("LobbyInviteFrom")
   lobbyInvitesReceived   LobbyInvite[]   @relation("LobbyInviteTo")
+  PlayerEvent            PlayerEvent[]
 }
 
 model Couleur {
@@ -262,6 +263,7 @@ model Bonus {
 
   score ScoreManche @relation(fields: [scoreboardId], references: [id])
 }
+
 model FriendRequest {
   id        Int      @id @default(autoincrement())
   fromId    Int
@@ -270,12 +272,31 @@ model FriendRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  from      Joueur   @relation("FriendRequestFrom", fields: [fromId], references: [id])
-  to        Joueur   @relation("FriendRequestTo", fields: [toId], references: [id])
+  from Joueur @relation("FriendRequestFrom", fields: [fromId], references: [id])
+  to   Joueur @relation("FriendRequestTo", fields: [toId], references: [id])
 
   @@unique([fromId, toId, status])
   @@index([fromId])
   @@index([toId])
+}
+
+model PlayerEvent {
+  id        Int             @id @default(autoincrement())
+  joueurId  Int
+  partieId  Int
+  mancheId  Int?
+  type      PlayerEventType
+  createdAt DateTime        @default(now())
+
+  joueur Joueur @relation(fields: [joueurId], references: [id])
+
+  @@index([joueurId, type, createdAt])
+  @@index([partieId])
+}
+
+enum PlayerEventType {
+  TURN_TIMEOUT
+  ABANDON_TRIGGERED
 }
 
 model Friendship {
@@ -284,13 +305,14 @@ model Friendship {
   bId       Int
   createdAt DateTime @default(now())
 
-  a         Joueur   @relation("FriendshipA", fields: [aId], references: [id])
-  b         Joueur   @relation("FriendshipB", fields: [bId], references: [id])
+  a Joueur @relation("FriendshipA", fields: [aId], references: [id])
+  b Joueur @relation("FriendshipB", fields: [bId], references: [id])
 
   @@unique([aId, bId])
   @@index([aId])
   @@index([bId])
 }
+
 model LobbyInvite {
   id        Int               @id @default(autoincrement())
   lobbyId   Int
@@ -299,28 +321,29 @@ model LobbyInvite {
   status    LobbyInviteStatus @default(sent)
   createdAt DateTime          @default(now())
 
-  lobby     Lobby             @relation(fields: [lobbyId], references: [id])
-  from      Joueur            @relation("LobbyInviteFrom", fields: [fromId], references: [id])
-  to        Joueur            @relation("LobbyInviteTo", fields: [toId], references: [id])
+  lobby Lobby  @relation(fields: [lobbyId], references: [id])
+  from  Joueur @relation("LobbyInviteFrom", fields: [fromId], references: [id])
+  to    Joueur @relation("LobbyInviteTo", fields: [toId], references: [id])
 
+  @@unique([lobbyId, toId, status]) // 1 invite “active” par lobby & destinataire
   @@index([lobbyId])
   @@index([toId])
-  @@unique([lobbyId, toId, status]) // 1 invite “active” par lobby & destinataire
 }
+
 model Notification {
-  id          Int                 @id @default(autoincrement())
-  type        NotificationType
-  senderId    Int
-  receiverId  Int
-  message     String
-  data        Json?               // Données supplémentaires (requestId, lobbyId, etc.)
-  read        Boolean             @default(false)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id         Int              @id @default(autoincrement())
+  type       NotificationType
+  senderId   Int
+  receiverId Int
+  message    String
+  data       Json? // Données supplémentaires (requestId, lobbyId, etc.)
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   // Relations
-  sender      Joueur              @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver    Joueur              @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender   Joueur @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver Joueur @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@index([receiverId])
   @@index([createdAt])
@@ -341,6 +364,7 @@ enum BonusType {
   capot
   dix_de_der
 }
+
 enum LobbyVisibility {
   public
   friends
@@ -353,4 +377,3 @@ enum LobbyInviteStatus {
   declined
   expired
 }
-

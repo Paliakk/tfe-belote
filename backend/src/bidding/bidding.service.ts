@@ -517,6 +517,14 @@ export class BiddingService {
 
         // log UI
         this.rt.emitTurnTimeout(partieId, { mancheId, joueurId, phase: 'bidding' });
+        await this.prisma.playerEvent.create({
+          data: {
+            joueurId,
+            partieId,
+            mancheId,
+            type: 'TURN_TIMEOUT',
+          },
+        })
 
         // 👉 auto-PASS
         await this.placeBid(mancheId, joueurId, { type: BidType.PASS }, true /* isAuto */)
@@ -549,6 +557,14 @@ export class BiddingService {
         if (count >= 2) {
           await this.gameService.abandonPartie(partieId, joueurId);
           this.clearBiddingTimer(partieId);
+          await this.prisma.playerEvent.create({
+            data: {
+              joueurId,
+              partieId,
+              mancheId,
+              type: 'ABANDON_TRIGGERED',
+            },
+          })
           return;
         }
 

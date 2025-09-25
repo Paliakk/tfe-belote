@@ -11,6 +11,7 @@ export class AuthController {
 
   @Get('me')
   me(@Req() req: any) {
-    return { ok: true, joueurId: req.user.joueurId };
+    // req.user.sub = joueurId (comme pour tes gateways)
+    return { id: req.user?.sub, username: req.user?.username ?? null };
   }
 }

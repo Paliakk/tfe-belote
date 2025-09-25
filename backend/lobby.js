@@ -400,14 +400,27 @@ function log(msg) {
 function clearLogs() { logEl().textContent = ''; }
 
 function renderMembers(membres = []) {
-  const el = listEl(); // tu l'as déjà: const listEl = () => q('#membres-list');
+  const el = listEl();
   if (!el) return;
   el.innerHTML = '';
+
   membres.forEach(m => {
     const li = document.createElement('li');
-    // Affiche uniquement le username, de façon sûre (pas d'HTML injecté)
-    li.textContent = (m?.username ?? '').toString();
+    li.className = 'member-row';
+    li.innerHTML = `
+      <span>${(m?.username ?? '').toString()}</span>
+      <button class="btn btn-small btn-stats" data-id="${m?.id}">📈 Stats</button>
+    `;
     el.appendChild(li);
+  });
+
+  // branche les handlers après rendu
+  el.querySelectorAll('.btn-stats').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = Number(e.currentTarget.getAttribute('data-id'));
+      if (!Number.isFinite(id)) return;
+      openStatsFor(id);
+    });
   });
 }
 
@@ -537,6 +550,45 @@ async function loadFriends() {
     renderFriends([]);
   }
 }
+// Utilitaires
+function openStatsFor(id) {
+  // Avant : window.open('/stats.html?id=...', '_blank')
+  if (window.StatsModal && id) {
+    window.StatsModal.open(Number(id));
+  } else {
+    alert('StatsModal indisponible.');
+  }
+}
+
+// 1) Qui suis-je ? (joueurId)
+async function fetchWhoAmI() {
+  const headers = {};
+  const t = sessionStorage.getItem('auth_token');
+  const idt = sessionStorage.getItem('id_token') || '';
+  if (t) headers.Authorization = 'Bearer ' + t;
+  if (idt) headers['X-ID-Token'] = idt; // même header que tu utilises au boot
+  const res = await fetch('http://localhost:3000/auth/me', { headers });
+  if (!res.ok) throw new Error('whoami failed');
+  return res.json(); // { id, username }
+}
+
+// Bouton "Mes stats"
+document.getElementById('btn-my-stats')?.addEventListener('click', async () => {
+  try {
+    // essaie en priorité un ID déjà mémorisé
+    let meId = Number(sessionStorage.getItem('me_id') || '0');
+    if (!meId) {
+      const me = await fetchWhoAmI();
+      meId = Number(me?.id || 0);
+      if (meId) sessionStorage.setItem('me_id', String(meId));
+    }
+    if (!meId) return alert('Impossible de déterminer votre identifiant joueur.');
+    openStatsFor(meId);
+  } catch (e) {
+    console.error(e);
+    alert('Erreur pour récupérer votre identifiant joueur.');
+  }
+});
 
 // Boutons UI
 friendsEls.refreshBtn()?.addEventListener('click', () => {

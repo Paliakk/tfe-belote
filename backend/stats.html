@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Stats joueur</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #171a21;
+            --muted: #9aa4af;
+            --txt: #e8eef4;
+            --acc: #2dd4bf;
+            --acc2: #60a5fa;
+            --red: #ef4444;
+            --green: #22c55e;
+            --amber: #f59e0b;
+            --ring1: #94a3b8;
+            --ring2: #334155;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--txt);
+            font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif
+        }
+
+        header {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #1f2430;
+            position: sticky;
+            top: 0;
+            background: linear-gradient(#10131a, #0f1115)
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0;
+            letter-spacing: .2px
+        }
+
+        .muted {
+            color: var(--muted)
+        }
+
+        .row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid #1e2330;
+            border-radius: 12px;
+            padding: 14px
+        }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(180px, 1fr));
+            gap: 12px
+        }
+
+        .kpi {
+            background: #0f1320;
+            border: 1px solid #1c2433;
+            border-radius: 12px;
+            padding: 12px
+        }
+
+        .kpi h3 {
+            font: 600 12px/1.3 ui-sans-serif;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            color: #aab6c3;
+            margin: 0 0 6px
+        }
+
+        .kpi .val {
+            font-size: 22px;
+            font-weight: 700
+        }
+
+        .kpi small {
+            color: var(--muted)
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 14px
+        }
+
+        .col-4 {
+            grid-column: span 4
+        }
+
+        .col-6 {
+            grid-column: span 6
+        }
+
+        .col-8 {
+            grid-column: span 8
+        }
+
+        .col-12 {
+            grid-column: span 12
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #0e1726;
+            border: 1px solid #1b2433;
+            border-radius: 999px;
+            padding: 6px 10px;
+            color: #c8d3df
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap
+        }
+
+        input,
+        button,
+        select {
+            background: #0b1220;
+            color: var(--txt);
+            border: 1px solid #1c2535;
+            border-radius: 8px;
+            padding: 8px 10px;
+            outline: none
+        }
+
+        button {
+            cursor: pointer
+        }
+
+        button.primary {
+            background: linear-gradient(180deg, #0ea5e9, #2563eb);
+            border: none
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px
+        }
+
+        .table th {
+            color: #aab6c3;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            padding: 0 10px
+        }
+
+        .table td {
+            padding: 10px;
+            background: #0f1320;
+            border-top: 1px solid #1c2433;
+            border-bottom: 1px solid #1c2433
+        }
+
+        .table tr td:first-child {
+            border-left: 1px solid #1c2433;
+            border-radius: 10px 0 0 10px
+        }
+
+        .table tr td:last-child {
+            border-right: 1px solid #1c2433;
+            border-radius: 0 10px 10px 0;
+            text-align: right
+        }
+
+        .bar {
+            height: 8px;
+            background: #0b1220;
+            border: 1px solid #1c2030;
+            border-radius: 999px;
+            overflow: hidden
+        }
+
+        .bar>i {
+            display: block;
+            height: 100%;
+            background: linear-gradient(90deg, var(--acc), var(--acc2))
+        }
+
+        .ring {
+            display: inline-flex;
+            gap: 10px
+        }
+
+        .ring .seg {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid var(--ring1);
+            position: relative
+        }
+
+        .ring .seg::after {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            border-radius: 50%
+        }
+
+        .c1::after {
+            background: #ef4444
+        }
+
+        .c2::after {
+            background: #f97316
+        }
+
+        .c3::after {
+            background: #22c55e
+        }
+
+        .c4::after {
+            background: #60a5fa
+        }
+
+        .ok {
+            color: var(--green)
+        }
+
+        .ko {
+            color: var(--red)
+        }
+
+        .warn {
+            color: var(--amber)
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
+        }
+
+        .foot {
+            color: #8793a1;
+            font-size: 12px
+        }
+
+        @media (max-width:980px) {
+            .kpis {
+                grid-template-columns: repeat(2, minmax(180px, 1fr))
+            }
+
+            .col-6,
+            .col-8 {
+                grid-column: span 12
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="row">
+        <h1>📈 Statistiques joueur</h1>
+        <div class="controls">
+            <label>Joueur&nbsp;ID <input id="inp-id" type="number" min="1" style="width:120px"></label>
+            <label>De <input id="inp-from" type="date"></label>
+            <label>À <input id="inp-to" type="date"></label>
+            <button id="btn-load" class="primary">Charger</button>
+            <span class="muted mono" id="api-hint"></span>
+        </div>
+    </header>
+
+    <main class="grid" style="padding:16px 20px">
+        <section class="col-12 kpis" id="kpis">
+            <!-- rempli dynamiquement -->
+        </section>
+
+        <section class="col-8 panel">
+            <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">
+                <h2 style="margin:0; font-size:16px">Résumé des performances</h2>
+                <span id="range" class="muted"></span>
+            </div>
+            <div class="row">
+                <div class="kpi" style="flex:1">
+                    <h3>Victoires</h3>
+                    <div class="val" id="wins">—</div>
+                    <small class="muted">Taux victoire: <b id="winRate">—</b></small>
+                </div>
+                <div class="kpi" style="flex:1">
+                    <h3>Points</h3>
+                    <div class="val" id="ptsManche">—</div>
+                    <small class="muted">/manche — Δ/manche <b id="diffManche">—</b></small>
+                </div>
+                <div class="kpi" style="flex:1">
+                    <h3>Prises</h3>
+                    <div class="val" id="takes">—</div>
+                    <small class="muted">Réussite: <b id="takesRate">—</b></small>
+                </div>
+                <div class="kpi" style="flex:1">
+                    <h3>Discipline</h3>
+                    <div class="val" id="afk">—</div>
+                    <small class="muted">Abandons: <b id="abandons">—</b></small>
+                </div>
+            </div>
+        </section>
+
+        <section class="col-4 panel">
+            <h2 style="margin:0 0 10px; font-size:16px">Atouts favoris & efficacité</h2>
+            <div id="atoutsWrap"></div>
+        </section>
+
+        <section class="col-6 panel">
+            <h2 style="margin:0 0 10px; font-size:16px">Efficacité par atout (quand preneur)</h2>
+            <table class="table" id="tbl-color">
+                <thead>
+                    <tr>
+                        <th>Atout</th>
+                        <th>Tentatives</th>
+                        <th>Succès</th>
+                        <th>Taux</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section class="col-6 panel">
+            <h2 style="margin:0 0 10px; font-size:16px">Plis & Bonus</h2>
+            <div class="row" style="gap:12px">
+                <div class="kpi" style="flex:1">
+                    <h3>Plis gagnés</h3>
+                    <div class="val" id="plisTot">—</div>
+                    <small class="muted">/manche <b id="plisAvg">—</b> · 8e pli <b id="last8">—</b></small>
+                </div>
+                <div class="kpi" style="flex:1">
+                    <h3>Belote</h3>
+                    <div class="val" id="belote">—</div>
+                    <small class="muted">Capot <b id="capot">—</b> · 10 de der <b id="dix">—</b></small>
+                </div>
+            </div>
+            <div style="margin-top:10px">
+                <div class="muted" style="margin-bottom:6px">Points en tant que preneur</div>
+                <div class="bar"><i id="bar-taker" style="width:0%"></i></div>
+                <div class="muted" style="margin:6px 0">Points en tant que non-preneur</div>
+                <div class="bar"><i id="bar-nontaker" style="width:0%"></i></div>
+            </div>
+        </section>
+
+        <section class="col-12 foot">
+            Astuce : passe un `id` dans l’URL, ex. <span
+                class="mono">/stats.html?id=3&amp;from=2025-01-01&amp;to=2025-12-31</span>.
+            Le token d’auth est lu depuis <span class="mono">sessionStorage.auth_token</span> si nécessaire.
+        </section>
+    </main>
+
+    <script>
+        const $ = (sel) => document.querySelector(sel);
+        const qs = new URLSearchParams(location.search);
+        const COULEURS = { 1: { sym: '♥', cls: 'c1', name: 'Coeur' }, 2: { sym: '♦', cls: 'c2', name: 'Carreau' }, 3: { sym: '♣', cls: 'c3', name: 'Trèfle' }, 4: { sym: '♠', cls: 'c4', name: 'Pique' } };
+
+        function fmtPct(x) { return isFinite(x) ? (x * 100).toFixed(0) + '%' : '—'; }
+        function fmtNum(x, d = 1) { return (x ?? 0).toFixed(d).replace('.', ','); }
+        function sym(cId) { const c = COULEURS[cId] || { sym: '?', cls: '', name: '?' }; return c.sym; }
+
+        function apiBase() {
+            return sessionStorage.getItem('api_base') || 'http://localhost:3000';
+        }
+        function token() { try { return sessionStorage.getItem('auth_token') || null; } catch { return null; } }
+
+        async function fetchStats(joueurId, from, to) {
+            const url = new URL(`/players/${joueurId}/stats`, apiBase());
+            if (from) url.searchParams.set('from', from);
+            if (to) url.searchParams.set('to', to);
+            $('#api-hint').textContent = url.pathname + url.search;
+
+            const headers = {};
+            const t = token(); if (t) headers['Authorization'] = 'Bearer ' + t;
+
+            const res = await fetch(url.toString(), { headers });
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(`HTTP ${res.status}: ${txt}`);
+            }
+            return res.json();
+        }
+
+        function renderKpis(s) {
+            const k = $('#kpis'); if (!k) return;
+            k.innerHTML = `
+        <div class="kpi">
+          <h3>Parties jouées</h3>
+          <div class="val">${s.games.played ?? 0}</div>
+          <small class="muted">Gagnées: <b>${s.games.won ?? 0}</b> · Perdues: <b>${s.games.lost ?? 0}</b></small>
+        </div>
+        <div class="kpi">
+          <h3>Taux de victoire</h3>
+          <div class="val ${s.games.winRate >= 0.5 ? 'ok' : (s.games.winRate >= 0.35 ? 'warn' : 'ko')}">${fmtPct(s.games.winRate)}</div>
+          <small class="muted">Abandonnées comptées comme défaites</small>
+        </div>
+        <div class="kpi">
+          <h3>Points / Manche</h3>
+          <div class="val">${fmtNum(s.points.perMancheAvg)}</div>
+          <small class="muted">/Partie: <b>${fmtNum(s.points.perPartieAvg)}</b></small>
+        </div>
+        <div class="kpi">
+          <h3>AFK</h3>
+          <div class="val">${s.discipline.timeouts ?? 0}</div>
+          <small class="muted">Abandons: <b>${s.discipline.abandons ?? 0}</b></small>
+        </div>
+      `;
+        }
+
+        function renderSummary(s) {
+            $('#range').textContent = s.range?.from || s.range?.to ? `${s.range.from?.slice(0, 10) || '…'} → ${s.range.to?.slice(0, 10) || '…'}` : 'Toutes les données';
+
+            $('#wins').textContent = `${s.games.won} / ${s.games.played}`;
+            $('#winRate').textContent = fmtPct(s.games.winRate);
+
+            $('#ptsManche').textContent = fmtNum(s.points.perMancheAvg);
+            $('#diffManche').textContent = fmtNum(s.points.diffPerMancheAvg);
+
+            const t = s.preneur;
+            $('#takes').textContent = `${t.attempted} → ${t.succeeded}`;
+            $('#takesRate').textContent = fmtPct(t.successRate);
+
+            $('#afk').textContent = s.discipline.timeouts;
+            $('#abandons').textContent = s.discipline.abandons;
+        }
+
+        function renderAtouts(s) {
+            const wrap = $('#atoutsWrap'); if (!wrap) return;
+            const fav = s.atouts.mostChosen;
+            const ring = (fav)
+                ? `<div class="ring">
+            <span class="seg ${COULEURS[fav.couleurId]?.cls || ''}" title="Atout favori"></span>
+            <span>${COULEURS[fav.couleurId]?.name || '?'} (${fav.count})</span>
+          </div>`
+                : `<span class="muted">Aucune prise enregistrée</span>`;
+            wrap.innerHTML = ring;
+
+            // tableau succès par couleur
+            const tbody = $('#tbl-color tbody');
+            tbody.innerHTML = '';
+            (s.atouts.successByColor || []).forEach(row => {
+                const c = COULEURS[row.couleurId] || {};
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+          <td><span class="pill"><b>${c.sym || '?'}</b> ${c.name || '?'}</span></td>
+          <td>${row.attempted}</td>
+          <td>${row.succeeded}</td>
+          <td>
+            <div class="bar"><i style="width:${Math.min(100, Math.round((row.successRate || 0) * 100))}%"></i></div>
+          </td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderPlisBonus(s) {
+            $('#plisTot').textContent = s.plis.total;
+            $('#plisAvg').textContent = fmtNum(s.plis.perMancheAvg);
+            $('#last8').textContent = fmtPct(s.plis.lastTrickWonPct);
+
+            $('#belote').textContent = s.bonus.beloteCount;
+            $('#capot').textContent = s.bonus.capotCount;
+            $('#dix').textContent = s.bonus.dixDeDerCount;
+
+            // barres points preneur / non preneur
+            const max = Math.max(1, s.preneur.pointsAsPreneurAvg, s.preneur.pointsAsNonPreneurAvg);
+            $('#bar-taker').style.width = (s.preneur.pointsAsPreneurAvg / max * 100).toFixed(0) + '%';
+            $('#bar-nontaker').style.width = (s.preneur.pointsAsNonPreneurAvg / max * 100).toFixed(0) + '%';
+        }
+
+        async function load() {
+            const id = Number($('#inp-id').value || qs.get('id'));
+            if (!id) { alert('Renseigne un joueurId (paramètre ?id=... ou champ en haut).'); return; }
+            const from = $('#inp-from').value || qs.get('from') || '';
+            const to = $('#inp-to').value || qs.get('to') || '';
+
+            try {
+                const s = await fetchStats(id, from || undefined, to || undefined);
+                renderKpis(s);
+                renderSummary(s);
+                renderAtouts(s);
+                renderPlisBonus(s);
+            } catch (e) {
+                console.error(e);
+                alert('Erreur chargement stats: ' + e.message);
+            }
+        }
+
+        // boot
+        (function init() {
+            $('#inp-id').value = qs.get('id') || '';
+            $('#inp-from').value = qs.get('from') || '';
+            $('#inp-to').value = qs.get('to') || '';
+            $('#btn-load').addEventListener('click', load);
+
+            // auto load si id en query
+            if (qs.get('id')) load();
+        })();
+    </script>
+</body>
+
+</html>
