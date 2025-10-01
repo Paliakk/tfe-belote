@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* Helpers en CSS pur (évite @apply v4 strict) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+}
+
+.card {
+  border-radius: 1rem;           /* ~= rounded-2xl */
+  background: #0f172aB3;         /* slate-900/70 approx */
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,.3), 0 4px 6px -2px rgba(0,0,0,.2);
+  border: 1px solid #1e293b;     /* slate-800 */
+}

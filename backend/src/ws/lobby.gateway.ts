@@ -51,7 +51,7 @@ export class LobbyGateway implements OnGatewayInit {
     const members = [
       { id: client.user.sub, username: lobby.createur.username },
     ];
-    this.rt.emitLobbyState(lobby.id, members, lobby.nom);
+    this.rt.emitLobbyState(lobby.id, members, lobby.nom,lobby.createur.id);
 
     return {
       lobbyId: lobby.id,
@@ -78,7 +78,7 @@ export class LobbyGateway implements OnGatewayInit {
 
     // évènement court + état complet pour assurer la synchro chez tout le monde
     this.rt.emitLobbyEvent(lobby.id, 'join', client.user.username ?? `J${joueurId}`);
-    this.rt.emitLobbyState(lobby.id, lobby.membres, lobby.nom);
+    this.rt.emitLobbyState(lobby.id, lobby.membres, lobby.nom, lobby.createur.id);
 
     return {
       message: `Rejoint le lobby ${lobby.nom}`,
@@ -104,7 +104,7 @@ export class LobbyGateway implements OnGatewayInit {
     client.emit('lobby:joined', { lobbyId: lobby.id });
 
     this.rt.emitLobbyEvent(lobby.id, 'join', client.user.username ?? `J${client.user.sub}`);
-    this.rt.emitLobbyState(lobby.id, lobby.membres, lobby.nom);
+    this.rt.emitLobbyState(lobby.id, lobby.membres, lobby.nom,lobby.createur.id);
 
 
     return { success: true, lobbyId: lobby.id, membres: lobby.membres };
@@ -129,10 +129,10 @@ export class LobbyGateway implements OnGatewayInit {
       const lobbyInfo = await this.lobbyService.listMembers(lobbyId);
       const light = await this.lobbyService.getLobbyLight(lobbyId);
       this.rt.emitLobbyEvent(lobbyId, 'leave', client.user!.username!);
-      this.rt.emitLobbyState(lobbyId, lobbyInfo.membres, light?.nom ?? undefined);
+      this.rt.emitLobbyState(lobbyId, lobbyInfo.membres, light?.nom ?? undefined,lobbyInfo.createurId);
 
       // le joueur qui quitte (avant de sortir de la room)
-      this.rt.emitLobbyStateToClient(client, lobbyId, lobbyInfo.membres);
+      this.rt.emitLobbyStateToClient(client, lobbyId, lobbyInfo.membres,light?.nom ?? undefined, lobbyInfo.createurId);
 
       // Notifie les amis du QUITTANT (lobby toujours vivant)
       await this.notifyFriendsLobbyChanged(joueurId, null);
@@ -157,25 +157,30 @@ export class LobbyGateway implements OnGatewayInit {
 
 
   @SubscribeMessage('lobby:startGame')
-  async handleStartGame(
-    @ConnectedSocket() client: SocketWithUser,
-    @MessageBody() data: { lobbyId: number; scoreMax?: number },
-  ) {
-    if (!client.user?.sub) return { error: 'unauthorized' };
+async handleStartGame(
+  @ConnectedSocket() client: SocketWithUser,
+  @MessageBody() data: { lobbyId?: number; scoreMax?: number }, // 👈 lobbyId optionnel
+) {
+  if (!client.user?.sub) return { error: 'unauthorized' };
 
-    const joueurId = client.user.sub;
-    const { lobbyId, scoreMax } = data;
-    const result = await this.lobbyService.startGame(
-      lobbyId,
-      joueurId,
-      scoreMax,
-    );
+  const joueurId = client.user.sub;
+  let lobbyId = Number(data?.lobbyId);
 
-    // notifier tout le monde et pousser l’URL de redirection
-    this.rt.emitGameStarted(lobbyId, result.partie.id);
-
-    return result;
+  // 🔒 si non fourni côté front, on déduit le lobby courant
+  if (!Number.isFinite(lobbyId) || lobbyId <= 0) {
+    const cur = await this.lobbyService.findCurrentLobbyFor(joueurId);
+    if (!cur?.id) return { error: 'no-lobby', message: 'Aucun lobby courant' };
+    lobbyId = cur.id;
   }
+
+  try {
+    const result = await this.lobbyService.startGame(lobbyId, joueurId, data?.scoreMax);
+    this.rt.emitGameStarted(lobbyId, result.partie.id);
+    return result;
+  } catch (e: any) {
+    return { error: 'start-failed', message: e?.message ?? 'unknown error' };
+  }
+}
 
   @SubscribeMessage('friends:list')
   async friendsList(@ConnectedSocket() client: SocketWithUser) {
@@ -229,7 +234,7 @@ export class LobbyGateway implements OnGatewayInit {
     this.rt.emitLobbyEvent(data.lobbyId, 'join', client.user.username ?? `J${client.user.sub}`);
     const members = await this.lobbyService.listMembers(data.lobbyId);
     const light = await this.lobbyService.getLobbyLight(data.lobbyId);
-    this.rt.emitLobbyState(data.lobbyId, members.membres, light?.nom ?? undefined)
+    this.rt.emitLobbyState(data.lobbyId, members.membres, light?.nom ?? undefined,members.createurId)
     this.rt.emitLobbyState(data.lobbyId, members.membres);
     await this.notifyFriendsLobbyChanged(client.user.sub, data.lobbyId)
     return res;
@@ -244,7 +249,8 @@ export class LobbyGateway implements OnGatewayInit {
     client.join(`lobby-${lobby.id}`);
     this.rt.registerClient(client, client.user.sub); // idempotent
     const info = await this.lobbyService.listMembers(lobby.id);
-    this.rt.emitLobbyStateToClient(client, lobby.id, info.membres);
+    const light = await this.lobbyService.getLobbyLight(lobby.id);
+    this.rt.emitLobbyStateToClient(client, lobby.id, info.membres, light?.nom ?? undefined, light?.createurId);
     client.emit('lobby:joined', { lobbyId: lobby.id });
     return { ok: true, lobbyId: lobby.id };
   }
@@ -293,7 +299,7 @@ export class LobbyGateway implements OnGatewayInit {
     // 5) État complet au seul client
     const info = await this.lobbyService.listMembers(lobbyId);
     const light = await this.lobbyService.getLobbyLight(lobbyId);
-    this.rt.emitLobbyStateToClient(client, lobbyId, info.membres, light?.nom ?? undefined);
+    this.rt.emitLobbyStateToClient(client, lobbyId, info.membres, light?.nom ?? undefined,info.createurId);
 
     // 6) Informer l'UI locale et log
     client.emit('lobby:joined', { lobbyId });

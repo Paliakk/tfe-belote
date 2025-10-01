@@ -1,0 +1,12 @@
+{
+  "name": "belote-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n BACK,FRONT -c blue,green \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\"",
+    "build": "npm --prefix frontend run build && npm --prefix backend run build",
+    "start": "npm --prefix backend run start:prod"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

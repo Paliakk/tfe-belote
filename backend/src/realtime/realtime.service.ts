@@ -133,9 +133,10 @@ export class RealtimeService {
   emitLobbyState(
     lobbyId: number,
     membres: { id: number; username: string }[],
-    lobbyName?: string
+    lobbyName?: string,
+    hostId? : number
   ) {
-    this.emitToLobby(lobbyId, 'lobby:state', { lobbyId, lobbyName, membres });
+    this.emitToLobby(lobbyId, 'lobby:state', { lobbyId, lobbyName, membres,hostId  });
   }
 
   /** Même chose mais à un client précis (utile quand il quitte) */
@@ -143,9 +144,10 @@ export class RealtimeService {
     client: Socket,
     lobbyId: number,
     membres: { id: number; username: string }[],
-    lobbyName?: string
+    lobbyName?: string,
+    hostId?: number
   ) {
-    client.emit('lobby:state', { lobbyId, lobbyName, membres });
+    client.emit('lobby:state', { lobbyId, lobbyName, membres,hostId  });
   }
 
   /** Petit event court pour feed un log côté UI */

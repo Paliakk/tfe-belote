@@ -182,11 +182,13 @@ export class LobbyService {
         membres: {
           include: { joueur: { select: { id: true, username: true } } },
         },
+        createur: { select: { id: true } }
       },
     });
     if (!lobby) throw new NotFoundException(`Lobby ${lobbyId} introuvable.`);
     return {
       lobbyId: lobby.id,
+      createurId: lobby.createur.id,
       nbMembres: lobby.membres.length,
       membres: lobby.membres.map((m) => m.joueur),
     };
@@ -231,7 +233,10 @@ export class LobbyService {
   // -------------------------------------------------------------------------
 
   /** Lancer la partie — `createurId` vient du token */
-  async startGame(lobbyId: number, createurId: number, scoreMax?: number) {
+  async startGame(lobbyId: number | undefined, createurId: number, scoreMax?: number) {
+    if (!Number.isFinite(lobbyId) || !lobbyId) {
+      throw new BadRequestException('lobbyId manquant ou invalide');
+    }
     return this.prisma.$transaction(
       async (tx) => {
         // 1) Lobby
@@ -614,7 +619,7 @@ export class LobbyService {
   async getLobbyLight(lobbyId: number) {
     return this.prisma.lobby.findUnique({
       where: { id: lobbyId },
-      select: { id: true, nom: true },
+      select: { id: true, nom: true, createurId: true },
     });
   }
 }
