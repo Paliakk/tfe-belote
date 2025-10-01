@@ -6,6 +6,7 @@ import { useGameStore } from "@/stores/game"
 let socket: Socket | null = null
 let handlersAttached = false
 
+
 export async function connectGameSocket(): Promise<Socket> {
   if (socket?.connected) return socket
 
@@ -59,15 +60,24 @@ function extractPlayableIds(payload: any): number[] {
   return []
 }
 
-function requestPlayableIfMyTurn() {
-  const s = socket
-  const game = useGameStore()
-  if (!s || !s.connected) return
+function requestPlayableIfMyTurn(s: Socket, game = useGameStore(), retryMs = 0) {
   if (!game.isPlayingPhase) return
-  if (!game.mancheId) return
+  if (!game.mancheId || !game.joueurId) return
   if (game.currentTurnPlayerId !== game.joueurId) return
-  s.emit('play:getPlayable', { mancheId: game.mancheId })
+
+  s.emit("play:getPlayable", { mancheId: game.mancheId })
+
+  // retry optionnel si pas de playable reçu
+  if (retryMs > 0) {
+    setTimeout(() => {
+      if (!game.isPlayingPhase) return
+      if (game.currentTurnPlayerId !== game.joueurId) return
+      if (game.playableIds && game.playableIds.size > 0) return
+      s.emit("play:getPlayable", { mancheId: game.mancheId })
+    }, retryMs)
+  }
 }
+
 
 // ✅ helpers “actions” appelables depuis les composants
 export function placeBid(params: { type: 'pass' | 'take_card' | 'choose_color', couleurAtoutId?: number }) {
@@ -87,6 +97,8 @@ function attachHandlersOnce(s: Socket) {
 
   const game = useGameStore()
 
+  s.on("connect", () => {/* noop */})
+
   // === Entrée table ===
   s.on("joinedPartie", (p: any) => {
     game.joueurId = p.joueurId ?? game.joueurId
@@ -105,7 +117,6 @@ function attachHandlersOnce(s: Socket) {
     if (st?.atout?.id) game.setAtout(st.atout.id)
     if (Array.isArray(st?.seats)) game.setSeats(st.seats)
     if (st?.joueurActuelId != null) game.setTurn(st.joueurActuelId)
-    // 👇 carte retournée visible tant qu'il n'y a PAS de preneur
     game.returnedCard = (!st?.preneurId && st?.carteRetournee) ? st.carteRetournee : null
 
     if (!game.isPlayingPhase) {
@@ -126,14 +137,16 @@ function attachHandlersOnce(s: Socket) {
   s.on("belote:reset", () => game.resetBelote())
 
   // === Tour / timer ===
-  s.on("turn:state", (p: { mancheId: number; joueurActuelId: number; seats?: any[] }) => {
+    s.on("turn:state", (p:{mancheId:number; joueurActuelId:number}) => {
     if (game.mancheId && p.mancheId !== game.mancheId) return
     game.setTurn(p.joueurActuelId ?? null)
-    if (Array.isArray(p?.seats)) game.setSeats(p.seats)
 
-    if (!game.isPlayingPhase) game.setPlayable([])
-    // 👇 si c'est mon tour en phase de JEU → demander les jouables
-    requestPlayableIfMyTurn()
+    if (!game.isPlayingPhase) {
+      game.setPlayable([])
+    } else {
+      // 👉 à chaque nouveau tour : on demande si c’est à moi
+      requestPlayableIfMyTurn(s, game, /*retry*/600)
+    }
   })
 
   s.on("turn:deadline", (p: { deadlineTs: number }) => {
@@ -141,21 +154,22 @@ function attachHandlersOnce(s: Socket) {
     const ts = typeof p?.deadlineTs === 'number' ? p.deadlineTs : Number(p?.deadlineTs)
     game.setDeadline(Number.isFinite(ts) ? ts : null)
   })
-  s.on("turn:timeout", () => { /* toast UI coté composant si tu veux */ })
+  s.on("turn:timeout", () => { })
   s.on("manche:ended", () => game.setDeadline(null))
   s.on("donne:relancee", () => game.setDeadline(null))
   s.on("game:over", () => game.setDeadline(null))
 
   // === Main & jouables ===
-  s.on("hand:state", (p: any) => {
+  s.on("hand:state", (p:any) => {
     if (p.mancheId && game.mancheId !== p.mancheId) {
       game.mancheId = p.mancheId
       game.resetBelote()
     }
     if (p.mancheNumero != null) game.mancheNumero = p.mancheNumero
     game.setHand(p.cartes || [])
-    // si c'est mon tour, on (re)demande au cas où
-    requestPlayableIfMyTurn()
+
+    // 👉 après réception de la main, redemande si c’est mon tour en phase de jeu
+    requestPlayableIfMyTurn(s, game, /*retry*/500)
   })
 
   s.on("play:playable", (p: any) => {
@@ -187,3 +201,4 @@ function attachHandlersOnce(s: Socket) {
     // Le composant de page s’occupera de router vers le lobby
   })
 }
+

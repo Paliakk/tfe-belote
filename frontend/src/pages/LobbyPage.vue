@@ -49,12 +49,6 @@
             >
               Créer
             </button>
-            <button
-              class="px-3 py-2 rounded-lg font-semibold bg-slate-300 text-slate-900 hover:bg-slate-400"
-              @click="joinByNameInline"
-            >
-              Rejoindre
-            </button>
           </div>
         </div>
 
@@ -76,13 +70,6 @@
             >
               ▶️ Lancer la partie
             </button>
-
-            <div class="text-xs text-slate-400">
-              hostId={{ lobby.hostId }} · me={{ session.joueurId }} · isHost={{
-                isHost
-              }}
-              · membres={{ membres.length }}
-            </div>
 
             <button
               class="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-slate-200 text-slate-900 font-bold hover:bg-slate-300"
@@ -107,10 +94,6 @@
             </div>
           </div>
         </div>
-
-        <small class="block text-slate-400">
-          Ces actions utilisent le token Auth0 récupéré via <code>getToken()</code>.
-        </small>
       </section>
 
       <!-- Grid principale -->
@@ -144,39 +127,6 @@
 
         <!-- Colonne droite -->
         <div class="space-y-4">
-          <!-- Récents -->
-          <section
-            class="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-3 sm:p-4"
-          >
-            <h2 class="text-lg font-semibold mb-2">Récents</h2>
-            <ul class="divide-y divide-white/10">
-              <li
-                v-for="r in recents"
-                :key="r.id"
-                class="py-2 flex items-center justify-between"
-              >
-                <div class="text-slate-200">{{ r.name }}</div>
-                <div class="flex gap-2">
-                  <button
-                    class="px-2.5 py-1.5 rounded-md font-semibold bg-slate-200 text-slate-900 hover:bg-slate-300"
-                    @click="joinRecent(r)"
-                  >
-                    Rejoindre
-                  </button>
-                  <button
-                    class="px-2.5 py-1.5 rounded-md font-semibold border border-white/15 bg-transparent text-slate-100 hover:bg-white/5"
-                    @click="forgetRecent(r.id)"
-                  >
-                    Oublier
-                  </button>
-                </div>
-              </li>
-              <li v-if="!recents.length" class="py-2 text-slate-400 text-sm">
-                Aucun historique
-              </li>
-            </ul>
-          </section>
-
           <!-- Amis -->
           <aside
             class="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-3 sm:p-4"

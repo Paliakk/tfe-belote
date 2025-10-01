@@ -7,6 +7,9 @@ export type PlayedCard = { ordre: number; joueurId: number; carte: Carte }
 
 export const useGameStore = defineStore("game", {
   state: () => ({
+
+    remainingByPlayer: {} as Record<number, number>,
+    _seenCardIds: new Set<number>(),
     // identité / navigation
     partieId: null as number | null,
     mancheId: null as number | null,
@@ -82,6 +85,30 @@ export const useGameStore = defineStore("game", {
     },
   },
   actions: {
+    initHandCountsForNewDeal() {
+      // À l'entame d'une donne, 8 cartes chacun
+      this.remainingByPlayer = {}
+      for (const s of this.seats) this.remainingByPlayer[s.joueurId] = 8
+      // si on connaît déjà ma main, on synchronise
+      if (this.joueurId) this.remainingByPlayer[this.joueurId] = this.myHand.length || 8
+      this._seenCardIds = new Set()
+    },
+    syncMyCount() {
+      if (this.joueurId != null) {
+        this.remainingByPlayer[this.joueurId] = this.myHand.length
+      }
+    },
+    applyTrickDeltaOnce(trick: { cartes?: { carte: { id: number }; joueurId: number }[] }) {
+      if (!Array.isArray(trick?.cartes)) return
+      for (const pc of trick.cartes) {
+        const cid = pc.carte?.id
+        if (!cid || this._seenCardIds.has(cid)) continue
+        this._seenCardIds.add(cid)
+        const jid = pc.joueurId
+        const cur = this.remainingByPlayer[jid] ?? 8
+        this.remainingByPlayer[jid] = Math.max(0, cur - 1)
+      }
+    },
     setSeats(seats: Seat[] | null | undefined) {
       if (Array.isArray(seats) && seats.length === 4) {
         this.seats = seats.slice().sort((a, b) => a.seat - b.seat)
@@ -136,6 +163,7 @@ export const useGameStore = defineStore("game", {
         this.isPlayingPhase = true
         this.atoutId = p?.atoutId ?? null
         this.returnedCard = null
+        this.initHandCountsForNewDeal()
         // le serveur enverra ensuite turn:state + play:playable
       })
 
@@ -161,8 +189,18 @@ export const useGameStore = defineStore("game", {
         if (typeof p?.mancheId === 'number') this.mancheId = p.mancheId
         if (typeof p?.mancheNumero === 'number') this.mancheNumero = p.mancheNumero
         this.setHand(Array.isArray(p?.cartes) ? p.cartes : [])
+        this.syncMyCount()
       })
-
+      socket.on('trick:state', (t: any) => {
+        this.trick = Array.isArray(t?.cartes) ? t.cartes : []
+        this.applyTrickDeltaOnce(t)
+      })
+      socket.on('donne:relancee', () => {
+        this.initHandCountsForNewDeal()
+      })
+      socket.on('manche:ended', () => {
+        this._seenCardIds = new Set()
+      })
       // (optionnel) belote visuel
       socket.on('belote:declared', (p: any) => this.markBelote(p.joueurId, 'belote'))
       socket.on('belote:rebelote', (p: any) => this.markBelote(p.joueurId, 'rebelote'))
