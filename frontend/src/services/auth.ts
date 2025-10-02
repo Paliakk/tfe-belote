@@ -11,25 +11,27 @@ async function getClient(): Promise<Auth0Client> {
     clientId: import.meta.env.VITE_AUTH0_CLIENT_ID,
     authorizationParams: {
       audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-      redirect_uri: window.location.origin + '/login'
+      redirect_uri: window.location.origin + '/login',
     },
     cacheLocation: 'localstorage',
-    useRefreshTokens: true
+    useRefreshTokens: true,
+    // ← clé pour “Invalid state” (persist la transaction de login même si sessionStorage saute)
+    useCookiesForTransactions: true,
   });
   return client;
 }
 
 export async function handleRedirectCallbackIfNeeded() {
+  // ne traite QUE /login?code&state
+  if (window.location.pathname !== '/login') return;
+  const qs = new URLSearchParams(window.location.search);
+  if (!qs.has('code') || !qs.has('state')) return;
+
   const c = await getClient();
-
-  if (window.location.search.includes('code=') && window.location.search.includes('state=')) {
-    // Récupérer appState depuis le retour de handleRedirectCallback
-    const result = await c.handleRedirectCallback();
-    const target = (result?.appState as string) || '/lobby';
-
-    // Nettoie l'URL et redirige
-    window.history.replaceState({}, document.title, target);
-  }
+  const result = await c.handleRedirectCallback();
+  const target = (result?.appState as string) || '/lobby';
+  // nettoie l’URL puis redirige
+  window.history.replaceState({}, document.title, target);
 }
 
 export async function login(redirectPath = '/lobby') {

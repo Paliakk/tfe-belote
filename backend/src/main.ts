@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from './users/users.service';
 import { WsAuthAdapter } from './auth/ws-auth.adapter';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,15 +13,21 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   // CORS pour le front pour plus tard
-  app.enableCors({
-    origin: [
+app.enableCors({
+  origin: (origin, cb) => {
+    const allowed = [
       'http://localhost:5173',
-      'http://localhost:5500',
-      'http://127.0.0.1:5500',
-    ], // ou ['http://localhost:5173'] plus tard pour le front
-    credentials: true,
-  });
-
+      process.env.FRONTEND_URL,     // ex: https://app.ton-domaine.tld
+    ].filter(Boolean) as string[]
+    // autoriser les apps installées (origin null) ↴
+    if (!origin || allowed.includes(origin)) return cb(null, true)
+    return cb(new Error(`CORS: ${origin} not allowed`), false)
+  },
+  credentials: true,
+})
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
   //Adapter WS (auth au handshake)
   const jwt = app.get(JwtService)
   const users = app.get(UsersService)

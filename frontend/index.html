@@ -2,9 +2,18 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <title>Belote</title>
+
+    <!-- PWA -->
     <meta name="theme-color" content="#0ea5e9" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Fallback offline (servi par workbox navigateFallback) -->
+    <link rel="prefetch" href="/offline.html" as="document" />
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="app"></div>
