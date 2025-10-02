@@ -44,7 +44,7 @@
         <!-- couche 1 : nappe -->
         <div class="table-cloth absolute inset-0 rounded-[24px] shadow-2xl z-[1]" />
         <!-- couche 2 : avatars/noms sur les bords -->
-        <div class="absolute inset-0 z-[2]">
+        <div class="absolute inset-0 z-[40]">
           <Seats class="h-full w-full" />
         </div>
         <!-- couche 3 : centre (carte retournée + tapis) -->
@@ -68,7 +68,8 @@
         </button>
       </div>
     </section>
-
+    <EndGameModal />
+    <Toasts/>
     <FloatingTurnHUD />
   </main>
 </template>
@@ -83,6 +84,7 @@ import {
   disconnectGameSocket,
 } from "@/services/game.socket";
 import { connectAndJoin } from "@/services/game.socket";
+import EndGameModal from '@/components/game/EndGameModal.vue'
 
 import Seats from "@/components/game/Seats.vue";
 import Hand from "@/components/game/Hand.vue";
@@ -92,6 +94,7 @@ import TotalScore from "@/components/game/TotalScore.vue";
 import GameTable from "@/components/game/GameTable.vue";
 import BiddingActions from "@/components/game/BiddingActions.vue";
 import FloatingTurnHUD from "@/components/game/FloatingTurnHUD.vue";
+import Toasts from "@/components/ui/Toasts.vue"
 
 const route = useRoute();
 const router = useRouter();
@@ -111,17 +114,6 @@ onMounted(async () => {
   }
   await connectAndJoin(partieId);
   game.partieId = partieId;
-
-  const s = await connectGameSocket();
-  s.emit("joinPartie", { partieId });
-  s.once("joinedPartie", (p: any) => {
-    if (p?.mancheId) s.emit("ui:rehydrate", { mancheId: p.mancheId });
-  });
-  s.on("game:over", (p: any) => {
-    const url = new URL("/lobby", location.origin);
-    if (p?.lobbyId) url.searchParams.set("lobbyId", String(p.lobbyId));
-    router.replace(url.pathname + url.search);
-  });
 });
 onBeforeUnmount(() => {
   disconnectGameSocket();

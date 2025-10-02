@@ -116,34 +116,45 @@ export class GameService {
   }
 
   async abandonPartie(partieId: number, joueurId: number) {
-    // (option) vérifier que le joueur est bien membre de la partie
-    const isMember = await this.prisma.equipeJoueur.findFirst({
-      where: { equipe: { partieId }, joueurId },
-      select: { equipeId: true },
-    });
-    if (!isMember) {
-      // on peut soit throw, soit ignorer silencieusement
-      // throw new ForbiddenException('Vous ne participez pas à cette partie.');
-    }
+    // (option) vérifier membre... (inchangé)
 
-    // statut 'abandonnee' (enum PartieStatut)
+    // 🔹 Trouver l'équipe (1/2) du joueur qui abandonne
+    const seat = await this.prisma.equipeJoueur.findFirst({
+      where: { equipe: { partieId }, joueurId },
+      select: { equipe: { select: { numero: true } } },
+    });
+    const leaverTeamNumero = seat?.equipe.numero as 1 | 2 | undefined;
+    const winnerTeamNumero =
+      leaverTeamNumero ? ((leaverTeamNumero === 1 ? 2 : 1) as 1 | 2) : undefined;
+
+    // statut 'abandonnee'
     await this.prisma.partie.update({
       where: { id: partieId },
       data: { statut: 'abandonnee' },
     });
 
-    // On réutilise le lobby et on notifie les clients comme pour fin de partie
+    // 🔹 Loguer l’évènement (volontaire) pour les stats
+    await this.prisma.playerEvent.create({
+      data: {
+        joueurId,
+        partieId,
+        type: 'ABANDON_TRIGGERED',
+      },
+    });
+
+    // Reuse lobby (inchangé)
     const reused = await this.lobbyService.reuseLobbyAfterGameByPartie(partieId);
     const lobbyId = reused?.lobbyId ?? null;
     this.clearTimeoutsForPartie(partieId);
-    // Notifier la fin pour l’UI (raison abandon)
+
+    // 🔔 Notifier la fin + indiquer l’équipe gagnante
     this.rt.emitToPartie(partieId, 'game:over', {
       partieId,
       lobbyId,
-      reason: 'abandon',           // 👈 new (front peut montrer un message différent)
+      reason: 'abandon',
       by: joueurId,
-      winnerTeamNumero: null,      // inconnu / sans objet
-      totals: null as Totals,
+      winnerTeamNumero: winnerTeamNumero ?? null, // 👈 maintenant défini
+      totals: null,
     });
 
     if (lobbyId != null) {

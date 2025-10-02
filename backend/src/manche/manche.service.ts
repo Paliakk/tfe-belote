@@ -117,12 +117,10 @@ export class MancheService {
           )
           .sort((a, b) => a.seat - b.seat);
 
-        const dealerSeat = seats.find(
-          (s) => s.joueurId === (m.donneurJoueurId as number),
-        )!.seat;
-        const nextDealerId = seats[(dealerSeat + 1) % 4].joueurId;
-        const leftOfNewDealerId = seats[(dealerSeat + 2) % 4].joueurId;
-
+        const dealerSeat = seats.find(s => s.joueurId === (m.donneurJoueurId as number))!.seat;
+        const nextDealerSeat = (dealerSeat + 1) % 4;
+        const nextDealerId = seats[nextDealerSeat].joueurId;
+        const leftOfNewDealerId = seats[(nextDealerSeat + 1) % 4].joueurId;
         // 3) Nouveau paquet + carte retournée(index 20)
         const cartes = await tx.carte.findMany();
         const paquet = [...cartes].sort(() => Math.random() - 0.5);
@@ -165,7 +163,7 @@ export class MancheService {
 
         // TODO: WS 'donne:relancee' + 'donne:cree'
 
-        return { newMancheId: newManche.id, numero: newManche.numero };
+        return { newMancheId: newManche.id, numero: newManche.numero, partieId: m.partieId, joueurActuelId: leftOfNewDealerId };
       },
       { isolationLevel: 'Serializable' },
     );
@@ -366,7 +364,7 @@ export class MancheService {
             (s) => s.joueurId === previousDealerId,
           )!.seat;
           const nextDealerId = seats[(dealerSeat + 1) % 4].joueurId;
-          const leftOfNewDealerId = seats[(dealerSeat + 2) % 4].joueurId;
+          const leftOfNewDealerId = seats[(dealerSeat + 3) % 4].joueurId;
 
           const cartes = await tx.carte.findMany();
           const paquet = [...cartes].sort(() => Math.random() - 0.5);

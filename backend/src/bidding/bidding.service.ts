@@ -290,7 +290,66 @@ export class BiddingService {
       // 3) démarrer le timer de JEU (pas d’enchère) côté serveur
       this.playService.armPlayTimer(res.partieId, res.mancheId, res.preneurId);
     }
+    if ((res as any)?.newMancheId && res.partieId) {
+  try {
+    const newMancheId = (res as any).newMancheId;
 
+    // 1) État initial complet de la nouvelle manche (inclut carteRetournee)
+    const st = await this.getState(newMancheId);
+    const mInfo = await this.prisma.manche.findUnique({
+      where: { id: newMancheId },
+      select: { numero: true },
+    });
+
+    // 2) Event d'init ATOMIQUE juste après la relance
+    // 👉 Option A: un seul event "bidding:init" (recommandé)
+    this.rt.emitToPartie(res.partieId, 'bidding:init', {
+      // pour le store
+      oldMancheId: mancheId,
+      mancheId: st.mancheId,
+      numero: mInfo?.numero,
+      // état d’enchères
+      joueurActuelId: st.joueurActuelId,   // = à gauche du NOUVEAU donneur (tour 1)
+      tourActuel: st.tourActuel,           // = 1
+      encheres: st.historique.map(e => ({
+        joueurId: e.joueur.id,
+        type: e.type,
+        couleurAtoutId: e.couleurAtoutId ?? undefined,
+        createdAt: e.at.toISOString(),
+      })),
+      // ✅ visible immédiatement partout
+      carteRetournee: st.carteRetournee
+        ? { id: st.carteRetournee.id, valeur: st.carteRetournee.valeur, couleurId: st.carteRetournee.couleurId }
+        : null,
+      seats: st.seats, // utile si le front recalcule l’index de siège
+    });
+
+    // 3) (optionnel mais propre) envoyer quand même un bidding:state idempotent
+    this.rt.emitToPartie(res.partieId, 'bidding:state', {
+      mancheId: st.mancheId,
+      joueurActuelId: st.joueurActuelId,
+      tourActuel: st.tourActuel as 1 | 2,
+      encheres: st.historique.map(e => ({
+        joueurId: e.joueur.id,
+        type: e.type,
+        couleurAtoutId: e.couleurAtoutId ?? undefined,
+        createdAt: e.at.toISOString(),
+      })),
+      carteRetournee: st.carteRetournee
+        ? { id: st.carteRetournee.id, valeur: st.carteRetournee.valeur, couleurId: st.carteRetournee.couleurId }
+        : null,
+    });
+
+    // 4) Pousser les mains (maintenant que l’UI a l’état + la carte)
+    await this.rt.emitHandsForPartie(this.prisma, res.partieId, newMancheId);
+
+    // 5) Armer le timer d’ENCHÈRES du nouveau joueur courant
+    await this.armBiddingTimerForManche(newMancheId);
+
+  } catch (e) {
+    console.error('[Bidding] post-relance init error', e);
+  }
+}
     return res;
   }
   // Utils
@@ -413,8 +472,10 @@ export class BiddingService {
     const dealerSeat = seats.find(
       (s) => s.joueurId === (m.donneurJoueurId as number),
     )!.seat;
-    const nextDealerId = seats[(dealerSeat + 1) % 4].joueurId;
-    const leftOfDealerId = seats[(dealerSeat + 2) % 4].joueurId; // à gauche du nouveau donneur
+    const nextDealerSeat = (dealerSeat + 1) % 4;
+    const nextDealerId = seats[nextDealerSeat].joueurId;
+    const leftOfNewDealerSeat = (nextDealerSeat + 1) % 4;
+    const leftOfNewDealerId = seats[leftOfNewDealerSeat].joueurId;
 
     // Marquer la manche actuelle comme "échouée" (pas de champ status -> on se contente de la laisser et on repart)
     // Nouveau paquet
@@ -431,7 +492,7 @@ export class BiddingService {
         donneurJoueurId: nextDealerId,
         carteRetourneeId: carteRetournee.id,
         tourActuel: 1,
-        joueurActuelId: leftOfDealerId,
+        joueurActuelId: leftOfNewDealerId,
         preneurId: null,
         paquet: paquetIds,
       },

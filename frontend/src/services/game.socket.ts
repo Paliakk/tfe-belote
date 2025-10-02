@@ -2,6 +2,9 @@
 import { io, Socket } from "socket.io-client"
 import { getToken } from "@/services/auth"
 import { useGameStore } from "@/stores/game"
+import { useUiStore } from '@/stores/ui'
+import { useStatsStore } from '@/stores/stats'
+import { useRecentStore } from '@/stores/recent'
 
 let socket: Socket | null = null
 let handlersAttached = false
@@ -96,8 +99,10 @@ function attachHandlersOnce(s: Socket) {
   handlersAttached = true
 
   const game = useGameStore()
+  const nameOf = (jid: number) => game.seats.find(s => s.joueurId === jid)?.username || `J${jid}`
+  const ui = useUiStore()
 
-  s.on("connect", () => {/* noop */})
+  s.on("connect", () => {/* noop */ })
 
   // === Entrée table ===
   s.on("joinedPartie", (p: any) => {
@@ -106,38 +111,80 @@ function attachHandlersOnce(s: Socket) {
     game.mancheNumero = p.numero ?? game.mancheNumero
     game.lobbyNom = p.lobbyNom ?? game.lobbyNom
     game.resetBelote()
+    ui.closeEndModal()
     // 🔁 réhydratation immédiate
     if (game.mancheId) s.emit('ui:rehydrate', { mancheId: game.mancheId })
   })
 
   // === Enchères ===
   s.on("bidding:state", (st: any) => {
+    // reset le timer quand on (re)entre en enchères
+    const game = useGameStore()
+    if (!useUiStore().endModal.visible) useUiStore().closeEndModal()
     game.lastBidding = st
     game.isPlayingPhase = !!st?.preneurId
     if (st?.atout?.id) game.setAtout(st.atout.id)
     if (Array.isArray(st?.seats)) game.setSeats(st.seats)
     if (st?.joueurActuelId != null) game.setTurn(st.joueurActuelId)
+
+    // 👇 clé : carte retournée visible tant qu'il n'y a pas de preneur
     game.returnedCard = (!st?.preneurId && st?.carteRetournee) ? st.carteRetournee : null
 
-    if (!game.isPlayingPhase) {
-      game.setPlayable([])
+    if (!game.isPlayingPhase) game.setPlayable([])
+    if (!game.isPlayingPhase && !game.returnedCard && game.mancheId) {
+      setTimeout(() => {
+        const g = useGameStore()
+        if (!g.isPlayingPhase && !g.returnedCard && g.mancheId) {
+          s.emit("ui:rehydrate", { mancheId: g.mancheId })
+        }
+      }, 150)
     }
   })
 
   s.on("bidding:ended", (p: any) => {
+    if (!useUiStore().endModal.visible) useUiStore().closeEndModal()
     game.isPlayingPhase = true
     game.setAtout(p?.atoutId ?? null)
     game.returnedCard = null
     // la demande de playable sera déclenchée sur turn:state
   })
+  // === Changement de manche (relance) ===
+  s.on("manche:switched", (p: { oldMancheId: number; newMancheId: number; numero?: number }) => {
+    const game = useGameStore()
+
+    // Bascule d’ID/numéro de manche
+    game.mancheId = p?.newMancheId ?? game.mancheId
+    if (p?.numero != null) game.mancheNumero = p.numero
+
+    // On revient explicitement en phase d’ENCHÈRES (pas de preneur)
+    game.isPlayingPhase = false
+    game.setAtout(null)
+    game.returnedCard = null
+    game.setPlayable([])
+    game.setDeadline(null)
+    game.resetBelote()
+
+    // 👉 Demande un snapshot COMPLET de la NOUVELLE donne (doit renvoyer bidding:state + carteRetournee)
+    if (game.mancheId) s.emit("ui:rehydrate", { mancheId: game.mancheId })
+  })
 
   // === Belote ===
-  s.on("belote:declared", (p: { joueurId: number }) => game.markBelote(p.joueurId, "belote"))
-  s.on("belote:rebelote", (p: { joueurId: number }) => game.markBelote(p.joueurId, "rebelote"))
+  s.on("belote:declared", (p: { joueurId: number }) => {
+    const ui = useUiStore()                         // <-- crée ici
+    game.markBelote(p.joueurId, "belote")
+    ui.pushToast({ id: Date.now(), text: `🔔 Belote — ${nameOf(p.joueurId)}` })
+  })
+
+  s.on("belote:rebelote", (p: { joueurId: number }) => {
+    const ui = useUiStore()                         // <-- et ici
+    game.markBelote(p.joueurId, "rebelote")
+    ui.pushToast({ id: Date.now() + 1, text: `🔔 Rebelote — ${nameOf(p.joueurId)}` })
+  })
   s.on("belote:reset", () => game.resetBelote())
 
   // === Tour / timer ===
-    s.on("turn:state", (p:{mancheId:number; joueurActuelId:number}) => {
+  s.on("turn:state", (p: { mancheId: number; joueurActuelId: number }) => {
+    if (!useUiStore().endModal.visible) useUiStore().closeEndModal()
     if (game.mancheId && p.mancheId !== game.mancheId) return
     game.setTurn(p.joueurActuelId ?? null)
 
@@ -149,18 +196,25 @@ function attachHandlersOnce(s: Socket) {
     }
   })
 
-  s.on("turn:deadline", (p: { deadlineTs: number }) => {
-    // ensure it's a number
+  s.on("turn:deadline", (p: { deadlineTs: number; mancheId?: number; phase?: 'bidding' | 'play' }) => {
+    const game = useGameStore()
+    // si on nous envoie une deadline pour une autre manche, on ignore
+    if (p?.mancheId && game.mancheId && p.mancheId !== game.mancheId) return
+
     const ts = typeof p?.deadlineTs === 'number' ? p.deadlineTs : Number(p?.deadlineTs)
-    game.setDeadline(Number.isFinite(ts) ? ts : null)
+    if (!Number.isFinite(ts)) return
+
+    // garde la plus grande deadline (au cas où un reset tardif écraserait l'info)
+    if (!game.deadlineTs || ts > game.deadlineTs) {
+      game.setDeadline(ts)
+    }
   })
   s.on("turn:timeout", () => { })
   s.on("manche:ended", () => game.setDeadline(null))
   s.on("donne:relancee", () => game.setDeadline(null))
-  s.on("game:over", () => game.setDeadline(null))
 
   // === Main & jouables ===
-  s.on("hand:state", (p:any) => {
+  s.on("hand:state", (p: any) => {
     if (p.mancheId && game.mancheId !== p.mancheId) {
       game.mancheId = p.mancheId
       game.resetBelote()
@@ -197,8 +251,69 @@ function attachHandlersOnce(s: Socket) {
   })
 
   // === Fin de partie ===
-  s.on("game:over", () => {
-    // Le composant de page s’occupera de router vers le lobby
+  s.on('game:over', (p: any) => {
+    const recent = useRecentStore()
+    console.log('[game:over] payload =', JSON.stringify(p, null, 2))
+    // 1) sécurité : ne traiter que notre table si identifiant présent
+    const sameTable = !p?.partieId || !game.partieId || Number(p.partieId) === Number(game.partieId)
+    if (!sameTable) return
+
+    // 2) Abandon => redirection immédiate
+    const isAbandon =
+      p?.reason === 'abandon' || p?.type === 'abandon' || p?.abandon === true || p?.wasAbandoned === true
+    if (isAbandon) { ui.gotoLobbyNow(p); return }
+
+    // 3) Fin normale => afficher modal + récap
+    const payload = {
+      winner: p?.winner ?? p?.vainqueur ?? null,
+      finalScores: p?.finalScores ?? p?.scores ?? null,
+      rounds: p?.rounds ?? p?.manches ?? null,
+      lobbyId: p?.lobbyId,
+      raw: p
+    }
+    try {
+      const stats = useStatsStore()
+
+      // équipe du joueur courant
+      const mySeat = game.seats.find(s => s.joueurId === game.joueurId)?.seat
+      const myTeam = mySeat == null ? 1 : (mySeat % 2 === 0 ? 1 : 2)
+
+      // tente de déterminer l'équipe gagnante
+      const winnerTeam =
+        p?.winnerTeam ??
+        p?.vainqueurTeam ??
+        (typeof p?.winner === 'number' ? p.winner : undefined)
+
+      let won: boolean | null = null
+
+      if (winnerTeam === 1 || winnerTeam === 2) {
+        won = (winnerTeam === myTeam)
+      } else {
+        // fallback: comparer les totaux si pas de champ winner* dans le payload
+        const cum = p?.cumule ?? p?.total ?? p?.totals ?? p?.scoreFinal ?? null
+        if (cum) {
+          const t1 = Number(cum.team1 ?? cum.equipe1 ?? cum.t1 ?? 0)
+          const t2 = Number(cum.team2 ?? cum.equipe2 ?? cum.t2 ?? 0)
+          if (Number.isFinite(t1) && Number.isFinite(t2)) {
+            const inferredWinner = t1 === t2 ? 0 : (t1 > t2 ? 1 : 2)
+            if (inferredWinner) won = (inferredWinner === myTeam)
+          }
+        }
+      }
+
+      if (won !== null) {
+        recent.recordResult({
+          ts: Date.now(),
+          won,
+          partieId: game.partieId ?? undefined,
+          lobbyId: p?.lobbyId ?? undefined,
+        })
+      }
+    } catch { }
+    if (!ui.endModal.visible) ui.openEndModal(10, p)
+
+    // 4) Watchdog : si des events tardifs arrivent (turn/bidding), ne ferment pas le modal
+    // (géré dans le store via .frozen)
   })
 }
 

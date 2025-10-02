@@ -5,10 +5,106 @@ type StatsWindow = { from?: Date; to?: Date };
 const inRange = (from?: Date, to?: Date) =>
   (!from && !to) ? undefined : { gte: from ?? undefined, lte: to ?? undefined };
 
+type RecentResult = {
+  partieId: number;
+  createdAt: Date;
+  statut: string;                   // 'terminee' | 'abandonnee' | ...
+  lobbyId?: number | null;
+  myScore: number;
+  oppScore: number;
+  won: boolean;
+};
+
 @Injectable()
 export class StatsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
+  async getRecentResults(joueurId: number, limit = 5): Promise<RecentResult[]> {
+    // 1) Parties où il a joué (ordonnées par date décroissante, limitées)
+    const eq = await this.prisma.equipeJoueur.findMany({
+      where: { joueurId },
+      select: { equipe: { select: { partieId: true, partie: true } } },
+    });
 
+    // parties triées par createdAt desc, sans doublon
+    const uniqueById = new Map<number, { id: number; createdAt: Date; statut: string; lobbyId?: number | null }>();
+    for (const x of eq) {
+      if (!x?.equipe?.partie) continue;
+      const p = x.equipe.partie;
+      const prev = uniqueById.get(p.id);
+      if (!prev || prev.createdAt < p.createdAt) {
+        uniqueById.set(p.id, { id: p.id, createdAt: p.createdAt, statut: p.statut, lobbyId: (p as any).lobbyId ?? null });
+      }
+    }
+    const sorted = Array.from(uniqueById.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+
+    if (sorted.length === 0) return [];
+
+    const partieIds = sorted.map(p => p.id);
+
+    // 2) Scores d’équipe par manche -> totals par (partieId, equipeId)
+    // On charge les scores des manches des parties concernées
+    const scoreRows = await this.prisma.scoreManche.findMany({
+      where: { manche: { partieId: { in: partieIds } } },
+      select: { equipeId: true, points: true, manche: { select: { partieId: true } } },
+    });
+
+    // Reduce: totals[partieId][equipeId] = sum(points)
+    const totalsByPartie = new Map<number, Map<number, number>>();
+    for (const row of scoreRows) {
+      const pid = row.manche.partieId;
+      if (!totalsByPartie.has(pid)) totalsByPartie.set(pid, new Map());
+      const byTeam = totalsByPartie.get(pid)!;
+      byTeam.set(row.equipeId, (byTeam.get(row.equipeId) ?? 0) + row.points);
+    }
+
+    const results: RecentResult[] = [];
+    for (const meta of sorted) {
+      const pid = meta.id;
+      const myEquipeId = await this.equipeIdFor(pid, joueurId);
+      const byTeam = totalsByPartie.get(pid) ?? new Map<number, number>();
+      let myScore = 0, oppScore = 0, won = false;
+
+      if (myEquipeId) {
+        myScore = byTeam.get(myEquipeId) ?? 0;
+        // premier autre équipeId (il y en a deux normalement)
+        const oppEntry = Array.from(byTeam.entries()).find(([eid]) => eid !== myEquipeId);
+        oppScore = oppEntry ? oppEntry[1] : 0;
+
+        if (meta.statut === 'abandonnee') {
+          // Qui a abandonné ? -> la team opposée gagne
+          const ev = await this.prisma.playerEvent.findFirst({
+            where: { partieId: pid, type: 'ABANDON_TRIGGERED' },
+            orderBy: { createdAt: 'desc' },
+            select: { joueurId: true },
+          });
+          if (ev?.joueurId) {
+            const leaverEquipeId = await this.equipeIdFor(pid, ev.joueurId);
+            won = !!leaverEquipeId && leaverEquipeId !== myEquipeId;
+          } else {
+            // si inconnu, considère perdu (ou laisse false)
+            won = false;
+          }
+        } else {
+          // Cas normal : compare scores
+          won = myScore > oppScore;
+        }
+      }
+
+      results.push({
+        partieId: pid,
+        createdAt: meta.createdAt,
+        statut: meta.statut,
+        lobbyId: meta.lobbyId ?? null,
+        myScore,
+        oppScore,
+        won,
+      });
+    }
+
+    return results;
+  }
   private async equipeIdFor(partieId: number, joueurId: number) {
     const ej = await this.prisma.equipeJoueur.findFirst({
       where: { joueurId, equipe: { partieId } },
@@ -39,7 +135,7 @@ export class StatsService {
       const myEquipeId = await this.equipeIdFor(p.id, joueurId);
       if (!myEquipeId) continue;
 
-      // cumul points par équipe sur la partie
+      // cumul points (inchangé)
       const totals = await this.prisma.scoreManche.groupBy({
         by: ['equipeId'],
         where: { manche: { partieId: p.id } },
@@ -47,10 +143,35 @@ export class StatsService {
       });
 
       if (p.statut === 'abandonnee') {
-        // toujours défaite
+        // 🔹 Qui a abandonné ? (event)
+        const ev = await this.prisma.playerEvent.findFirst({
+          where: { partieId: p.id, type: 'ABANDON_TRIGGERED' },
+          orderBy: { createdAt: 'desc' },
+          select: { joueurId: true },
+        });
+
+        // 🔹 fallback: si tu as ajouté Partie.abandonByJoueurId, lis-le ici
+        // const partieRow = await this.prisma.partie.findUnique({ where: { id: p.id }, select: { abandonByJoueurId: true } })
+        // const leaverId = partieRow?.abandonByJoueurId ?? ev?.joueurId ?? null
+
+        const leaverId = ev?.joueurId ?? null;
+        if (leaverId) {
+          const leaverEquipeId = await this.equipeIdFor(p.id, leaverId);
+          if (leaverEquipeId) {
+            // mon équipe a-t-elle abandonné ?
+            if (myEquipeId !== leaverEquipeId) {
+              wonParties++; // ✅ victoire pour l’équipe adverse
+            }
+            // sinon: défaite (ne rien ajouter, on comptera plus bas)
+            continue;
+          }
+        }
+
+        // Si on ne sait pas qui a abandonné → ne rien compter comme gagné
         continue;
       }
 
+      // Cas normal (partie finie par le score)
       if (totals.length >= 2) {
         const my = totals.find(t => t.equipeId === myEquipeId)?._sum.points ?? 0;
         const opp = totals.find(t => t.equipeId !== myEquipeId)?._sum.points ?? 0;
@@ -146,7 +267,7 @@ export class StatsService {
       attempted: v.attempted,
       succeeded: v.succeeded,
       successRate: v.attempted ? v.succeeded / v.attempted : 0,
-    })).sort((a,b)=>b.attempted-a.attempted);
+    })).sort((a, b) => b.attempted - a.attempted);
     const mostChosen = successByColor[0]
       ? { couleurId: successByColor[0].couleurId, count: successByColor[0].attempted }
       : undefined;

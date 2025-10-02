@@ -3,13 +3,10 @@
     <div class="circle" :class="teamClass">{{ initials }}</div>
     <div class="meta">
       <div class="name">
-        {{ player?.username || (me?'Moi':'—') }}
+        {{ player?.username || (me ? "Moi" : "—") }}
         <span v-if="turn" class="pill">à lui</span>
       </div>
-      <div v-if="hasBelote" class="belote">🔔 Belote</div>
-      <div class="hand">
-        <div class="mini" v-for="i in remaining" :key="i" />
-      </div>
+      <div v-if="beloteTag" class="belote">🔔 {{ beloteTag }}</div>
     </div>
   </div>
 </template>
@@ -25,6 +22,11 @@ const props = defineProps({
   player: { type: Object as PropType<SeatPlayer>, default: null },
   turn:   { type: Boolean, default: false },
   me:     { type: Boolean, default: false },
+})
+const beloteTag = computed(()=>{
+  const jid = props.player?.joueurId
+  const v = jid ? game.beloteByPlayer.get(jid) : undefined
+  return v === 'belote' ? 'Belote' : v === 'rebelote' ? 'Rebelote' : null
 })
 
 const game = useGameStore()
@@ -49,36 +51,86 @@ const remaining = computed(()=>{
 </script>
 
 <style scoped>
-.seat-node{
-  position:absolute; transform: translate(-50%,-50%);
-  display:flex; gap:10px; align-items:center;
-  background: rgba(0,0,0,.18);
+.seat-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.18);
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.20);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 6px 10px;
-  color:#fff;
-  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
-.seat-node.on-turn{ box-shadow: 0 0 0 3px #34d399 inset, 0 16px 40px rgba(0,0,0,.35); }
+.seat-node.on-turn {
+  box-shadow: 0 0 0 3px #34d399 inset, 0 16px 40px rgba(0, 0, 0, 0.35);
+}
 
-.circle{
-  width:54px; height:54px; border-radius:999px; display:grid; place-items:center;
-  font-weight:800; color:#0b1f17;
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,.35);
+.circle {
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #0b1f17;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
-.team1{ background: #93c5fd; } /* bleu clair */
-.team2{ background: #fcd34d; } /* ambre clair */
+.team1 {
+  background: #93c5fd;
+} /* bleu clair */
+.team2 {
+  background: #fcd34d;
+} /* ambre clair */
 
-.meta{ display:flex; flex-direction:column; gap:3px; }
-.name{ font-weight:700; }
-.pill{
-  margin-left:6px; font-size:11px; padding:2px 6px; border-radius:999px;
-  background:#fff; color:#064e3b; font-weight:800;
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
-.belote{
-  font-size:12px; background:#fde68a; color:#4d3800;
-  display:inline-block; padding: 1px 6px; border-radius: 8px; font-weight:600;
+.name {
+  font-weight: 700;
 }
-.hand{ display:flex; gap:3px; flex-wrap:wrap; max-width:200px; }
-.mini{ width:10px; height:14px; border-radius:2px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.45); }
+.pill {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: #064e3b;
+  font-weight: 800;
+}
+.belote {
+  font-size: 12px;
+  background: #fde68a;
+  color: #4d3800;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.hand {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  max-width: 200px;
+}
+.mini {
+  width: 10px;
+  height: 14px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.belote {
+  font-size: 12px;
+  background: #fde68a;
+  color: #4d3800;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+}
 </style>

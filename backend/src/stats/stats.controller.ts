@@ -17,4 +17,12 @@ export class StatsController {
     };
     return this.stats.getPlayerCoreStats(Number(id), win);
   }
+  @Get(':id/recent')
+  async getRecent(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+  ) {
+    const n = Math.max(1, Math.min(10, Number(limit ?? 5)));
+    return this.stats.getRecentResults(Number(id), n);
+  }
 }

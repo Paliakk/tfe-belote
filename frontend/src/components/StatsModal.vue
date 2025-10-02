@@ -28,46 +28,6 @@
             ×
           </button>
         </div>
-
-        <!-- Controls -->
-        <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
-          <label class="text-sm text-slate-300 flex items-center gap-2">
-            Joueur&nbsp;ID
-            <input
-              v-model.number="localJoueurId"
-              type="number"
-              min="1"
-              class="h-9 w-[120px] rounded-lg border border-white/15 bg-white/5 px-3 outline-none"
-            />
-          </label>
-          <label class="text-sm text-slate-300 flex items-center gap-2">
-            De
-            <input
-              v-model="from"
-              type="date"
-              class="h-9 rounded-lg border border-white/15 bg-white/5 px-3 outline-none"
-            />
-          </label>
-          <label class="text-sm text-slate-300 flex items-center gap-2">
-            À
-            <input
-              v-model="to"
-              type="date"
-              class="h-9 rounded-lg border border-white/15 bg-white/5 px-3 outline-none"
-            />
-          </label>
-          <button
-            class="h-9 rounded-lg bg-sky-600 px-3 font-semibold hover:bg-sky-500"
-            @click="load()"
-          >
-            Charger
-          </button>
-
-          <span v-if="apiHint" class="text-xs text-slate-400 font-mono ml-auto">
-            {{ apiHint }}
-          </span>
-        </div>
-
         <!-- KPIs -->
         <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <div class="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
@@ -190,6 +150,9 @@
               </div>
             </div>
           </div>
+          <div class="mt-6">
+            <RecentResults :joueurId="localJoueurId || joueurId || null" :limit="5" />
+          </div>
 
           <section class="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
             <h3 class="text-base font-semibold mb-2">Atouts favoris & efficacité</h3>
@@ -208,7 +171,6 @@
                 >
               </span>
             </div>
-
             <div v-else class="text-slate-400">Aucune prise enregistrée</div>
           </section>
         </section>
@@ -325,6 +287,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { getToken } from "@/services/auth";
+import RecentResults from "@/components/stats/RecentResults.vue"
 
 type Stats = {
   range?: { from?: string; to?: string };

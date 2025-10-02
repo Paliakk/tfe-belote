@@ -29,12 +29,13 @@ type Slot = typeof slots[number]
 
 const game = useGameStore()
 
-function relSlotOf(jid:number): Slot {
+function relSlotOf(jid:number): 'n'|'e'|'s'|'w' {
   const me = game.mySeatIdx ?? 0
   const him = game.seats.find(s => s.joueurId === jid)?.seat
   if (him == null) return 'n'
   const d = (him - me + 4) % 4
-  return (['s','e','n','w'][d] as Slot)
+  // sens antihoraire : s, w, n, e
+  return (['s','w','n','e'][d] as any)
 }
 
 const sorted = computed<PlayedCard[]>(() =>
