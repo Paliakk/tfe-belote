@@ -2,8 +2,10 @@
   "name": "belote-monorepo",
   "private": true,
   "scripts": {
+    "install": "npm install --prefix frontend && npm install --prefix backend",
     "dev": "concurrently -n BACK,FRONT -c blue,green \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\"",
-    "build": "npm --prefix frontend run build && npm --prefix backend run build",
+    "build": "npm run install && npm run build-only",
+    "build-only": "npm run build --prefix frontend && npm run build --prefix backend",
     "start": "npm --prefix backend run start:prod"
   },
   "devDependencies": {
