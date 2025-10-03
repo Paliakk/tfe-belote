@@ -10,9 +10,14 @@ function normalizeUsernameSeed(s?: string | null): string {
   return cleaned;
 }
 
+// username "générique" (créé sans info: user, user1234, …)
+function isGenericUsername(u?: string | null): boolean {
+  return !!u && /^user(\d+)?$/i.test(u);
+}
+
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async findByAuth0Sub(auth0Sub: string | number) {
     if (typeof auth0Sub === 'number') {
@@ -27,7 +32,6 @@ export class UsersService {
     });
   }
 
-
   async ensureFromAuth0(u: {
     sub: string;
     email?: string | null;
@@ -35,46 +39,74 @@ export class UsersService {
     nickname?: string | null;
     picture?: string | null;
   }) {
-    // 0) garde-fou
-    if (!u?.sub) {
-      throw new Error('ensureFromAuth0: missing sub');
-    }
+    if (!u?.sub) throw new Error('ensureFromAuth0: missing sub');
 
     // 1) par sub
-    const joueur = await this.prisma.joueur.findUnique({
-      where: { auth0Sub: u.sub },
-    });
+    const joueur = await this.prisma.joueur.findUnique({ where: { auth0Sub: u.sub } });
     if (joueur) {
-      // mise à jour douce (ne JAMAIS écraser email par null)
-      return this.prisma.joueur.update({
-        where: { id: joueur.id },
-        data: {
-          email: u.email ?? joueur.email,
-          displayName: u.name ?? joueur.displayName ?? joueur.username,
-          avatarUrl: u.picture ?? joueur.avatarUrl,
-        },
-      });
+      // Mise à jour douce des champs visibles
+      const data: any = {
+        email: u.email ?? joueur.email,
+        displayName: u.name ?? joueur.displayName ?? joueur.username,
+        avatarUrl: u.picture ?? joueur.avatarUrl,
+      };
+
+      // 👉 Upgrade du username si l'actuel est "générique"
+      if (isGenericUsername(joueur.username)) {
+        const localPart = u.email ? u.email.split('@')[0] : '';
+        const seedCandidate =
+          normalizeUsernameSeed(localPart) ||
+          normalizeUsernameSeed(u.nickname) ||
+          normalizeUsernameSeed(u.name) ||
+          '';
+
+        if (seedCandidate) {
+          let username = seedCandidate;
+          while (await this.prisma.joueur.findUnique({ where: { username } })) {
+            const bump = Math.floor(1000 + Math.random() * 9000);
+            username = `${seedCandidate}${bump}`;
+          }
+          data.username = username;
+        }
+      }
+
+      return this.prisma.joueur.update({ where: { id: joueur.id }, data });
     }
 
     // 2) par email si dispo
     if (u.email) {
-      const byEmail = await this.prisma.joueur.findUnique({
-        where: { email: u.email },
-      });
+      const byEmail = await this.prisma.joueur.findUnique({ where: { email: u.email } });
       if (byEmail) {
-        return this.prisma.joueur.update({
-          where: { id: byEmail.id },
-          data: {
-            auth0Sub: u.sub,
-            displayName: u.name ?? byEmail.displayName ?? byEmail.username,
-            avatarUrl: u.picture ?? byEmail.avatarUrl,
-          },
-        });
+        const data: any = {
+          auth0Sub: u.sub,
+          displayName: u.name ?? byEmail.displayName ?? byEmail.username,
+          avatarUrl: u.picture ?? byEmail.avatarUrl,
+        };
+
+        // 👉 Upgrade aussi si ce compte email avait un username générique
+        if (isGenericUsername(byEmail.username)) {
+          const localPart = u.email.split('@')[0];
+          const seedCandidate =
+            normalizeUsernameSeed(localPart) ||
+            normalizeUsernameSeed(u.nickname) ||
+            normalizeUsernameSeed(u.name) ||
+            '';
+
+          if (seedCandidate) {
+            let username = seedCandidate;
+            while (await this.prisma.joueur.findUnique({ where: { username } })) {
+              const bump = Math.floor(1000 + Math.random() * 9000);
+              username = `${seedCandidate}${bump}`;
+            }
+            data.username = username;
+          }
+        }
+
+        return this.prisma.joueur.update({ where: { id: byEmail.id }, data });
       }
     }
 
     // 3) création propre
-    // 3.a) choisir une graine de username (ordre: localPart(email), nickname, name)
     const localPart = u.email ? u.email.split('@')[0] : '';
     let seed =
       normalizeUsernameSeed(localPart) ||
@@ -83,29 +115,23 @@ export class UsersService {
 
     if (!seed) seed = 'user'; // dernier filet de sécurité
 
-    // 3.b) garantir l'unicité du username
     let username = seed;
-    let bump = 0;
-    // essaie jusqu'à trouver un username libre (ex: igor.mio16, igor.mio161234, …)
     while (await this.prisma.joueur.findUnique({ where: { username } })) {
-      bump = Math.floor(1000 + Math.random() * 9000);
+      const bump = Math.floor(1000 + Math.random() * 9000);
       username = `${seed}${bump}`;
     }
 
-    // 3.c) email : vrai email si fourni, sinon fabrique un unique "no-email" stable
+    // email : vrai email si fourni, sinon fabrique un unique "no-email" stable
     let email = u.email ?? `${username}@no-email.local`;
     if (!u.email) {
-      // assure l'unicité (contrainte unique Prisma)
       while (await this.prisma.joueur.findUnique({ where: { email } })) {
         const r = Math.floor(1000 + Math.random() * 9000);
         email = `${username}${r}@no-email.local`;
       }
     }
 
-    // 3.d) displayName
     const displayName = u.name && u.name.trim() ? u.name.trim() : username;
 
-    // 3.e) création
     return this.prisma.joueur.create({
       data: {
         username,
@@ -117,6 +143,7 @@ export class UsersService {
       },
     });
   }
+
   async findById(id: number) {
     return this.prisma.joueur.findUnique({
       where: { id },
