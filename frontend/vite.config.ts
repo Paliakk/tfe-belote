@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
+
+const allowedHost = 'scintillating-reverence-production.up.railway.app'
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -23,16 +26,14 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
-          // GETs on API → SWR
           {
             urlPattern: ({ url }) => url.origin === new URL(import.meta.env.VITE_API_BASE).origin,
             handler: 'StaleWhileRevalidate',
             method: 'GET',
             options: { cacheName: 'api-get' }
           },
-          // Socket.IO & mutating requests → network only (no cache)
           {
             urlPattern: ({ url }) => url.pathname.includes('/socket.io'),
             handler: 'NetworkOnly'
@@ -41,6 +42,19 @@ export default defineConfig({
       }
     })
   ],
-  server: { port: 5173, strictPort: true },
-  resolve: { alias: { '@': '/src' } }
+  server: {
+    port: 5173,
+    strictPort: true
+  },
+  preview: {
+    host: true,
+    port: 4173,
+    strictPort: true,
+    allowedHosts: [allowedHost]
+  },
+  resolve: {
+    alias: {
+      '@': '/src'
+    }
+  }
 })
