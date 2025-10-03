@@ -19,7 +19,6 @@ export async function connectSocket(): Promise<Socket> {
 
   // Récupère les tokens AVANT la construction (handshake auth)
   const accessToken = await getToken().catch(() => undefined);
-  const idToken = sessionStorage.getItem("id_token") || undefined;
   const idToken = await getIdTokenRaw().catch(() => undefined)
 
   if (!socket) {
