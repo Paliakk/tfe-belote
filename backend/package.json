@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "0.0.1",
   "description": "",
-  "main": "dist/main.js",
+  "main": "dist/src/main.js",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
