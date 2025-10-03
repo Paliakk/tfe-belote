@@ -2,9 +2,10 @@
   "name": "frontend",
   "version": "0.0.0",
   "private": true,
+  "main": "index.html",
   "type": "module",
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=18"
   },
   "scripts": {
     "dev": "vite",
