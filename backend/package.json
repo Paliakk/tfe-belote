@@ -7,7 +7,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "prisma generate && npm run migrate:deploy && npm run seed",
+    "postinstall": "prisma generate",
     "build": "nest build",
     "build-only": "nest build",
     "format": "prettier --write \"src//.ts\" \"test//.ts\"",
