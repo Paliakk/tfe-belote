@@ -6,7 +6,7 @@ import { useUiStore } from '@/stores/ui'
 import { useStatsStore } from '@/stores/stats'
 import { useRecentStore } from '@/stores/recent'
 import { getIdTokenRaw } from '@/services/auth'
-import { getToken } from '@/services/auth'
+
 
 let socket: Socket | null = null
 let handlersAttached = false
