@@ -41,8 +41,8 @@ export const useGameStore = defineStore("game", {
     beloteByPlayer: new Map<number, "belote" | "rebelote">(),
 
     // plis & score
-    trick: [] as PlayedCard[],
-    lastTrick: [] as PlayedCard[],
+    trick: [] as { id:number; valeur:string; couleurId:number; joueurId?:number }[],
+    lastTrick: [] as { id:number; valeur:string; couleurId:number; joueurId?:number }[],
     scoreLive: { team1: 0, team2: 0 },
     totals: { team1: 0, team2: 0 },
 
@@ -113,6 +113,17 @@ export const useGameStore = defineStore("game", {
       if (Array.isArray(seats) && seats.length === 4) {
         this.seats = seats.slice().sort((a, b) => a.seat - b.seat)
       }
+    },
+    setTrick(cards: any[]) {
+      this.trick = Array.isArray(cards) ? cards : []
+    },
+    setLastTrick(cards: any[]) {
+      this.lastTrick = Array.isArray(cards) ? cards : []
+      this.lastTrickNo++      // (optionnel) incrémente pour forcer un refresh visuel
+    },
+    clearLastTrick() {
+      this.lastTrick = []
+      this.lastTrickNo++
     },
     setHand(cards: Carte[]) { this.myHand = Array.isArray(cards) ? cards : [] },
     setPlayable(ids: number[]) { this.playableIds = new Set(Array.isArray(ids) ? ids : []) },

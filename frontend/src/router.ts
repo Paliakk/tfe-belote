@@ -6,11 +6,13 @@ const LoginPage = () => import('./pages/LoginPage.vue')
 const LobbyPage = () => import('./pages/LobbyPage.vue')
 const GamePage = () => import('./pages/GamePage.vue')
 const StatsPage = () => import('./pages/StatsPage.vue')
+const RulesPage = () => import('./pages/RulesPage.vue')
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: HomePage },
+    { path: '/rules', name: 'rules', component: RulesPage, meta: { public: true }, alias: ['/regles'] },
     { path: '/login', component: LoginPage },
     { path: '/lobby', component: LobbyPage, meta: { requiresAuth: true } },
     { path: '/game/:partieId/:mancheId?', component: GamePage, meta: { requiresAuth: true } },

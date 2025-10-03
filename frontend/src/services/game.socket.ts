@@ -232,8 +232,16 @@ function attachHandlersOnce(s: Socket) {
   })
 
   // === Pli courant + dernier pli ===
-  s.on("trick:state", (t: any) => { game.trick = Array.isArray(t?.cartes) ? t.cartes : [] })
-  s.on("trick:closed", (p: any) => { game.lastTrick = Array.isArray(p?.cartes) ? p.cartes : [] })
+  s.on("trick:state", (t: any) => {
+  // Pli courant → on remplace uniquement le "trick" en cours
+  const cards = Array.isArray(t?.cartes) ? t.cartes : []
+  game.setTrick(cards)
+})
+  s.on("trick:closed", (p: any) => {
+  // Chaque clôture de pli met à jour le "dernier pli"
+  const cards = Array.isArray(p?.cartes) ? p.cartes : []
+  game.setLastTrick(cards)
+})
 
   // === Scores ===
   s.on("score:live", (sco: { team1: number; team2: number }) => {
