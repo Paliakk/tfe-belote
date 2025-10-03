@@ -6,7 +6,11 @@ let socket: Socket | null = null;
 let handlersAttached = false;
 
 function wsUrl() {
-  return import.meta.env.VITE_API_WS || "http://localhost:3000";
+  const fromEnv = import.meta.env.VITE_API_WS as string | undefined
+  if (fromEnv) return fromEnv
+  // fallback: dérive du BASE
+  const base = (import.meta.env.VITE_API_BASE as string) || 'http://localhost:3000'
+  return base.replace(/^http/i, 'ws')
 }
 
 export async function connectSocket(): Promise<Socket> {

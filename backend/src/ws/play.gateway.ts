@@ -45,7 +45,15 @@ type PlayCardClosed = {
 };
 type PlayCardResult = PlayCardOngoing | PlayCardClosed;
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({
+  cors: {
+    origin: [
+      'http://localhost:5173',
+      'https://scintillating-reverence-production.up.railway.app'
+    ],
+    credentials: true
+  }
+})
 @UseGuards(AuthGuardSocket)
 export class PlayGateway implements OnGatewayInit {
   @WebSocketServer() server: Server;

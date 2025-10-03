@@ -16,7 +16,15 @@ import { BiddingService } from 'src/bidding/bidding.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GameService } from 'src/game/game.service';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({
+  cors: {
+    origin: [
+      'http://localhost:5173',
+      'https://scintillating-reverence-production.up.railway.app'
+    ],
+    credentials: true
+  }
+})
 @UseGuards(AuthGuardSocket)
 export class GameGateway implements OnGatewayInit {
   @WebSocketServer() server: Server;

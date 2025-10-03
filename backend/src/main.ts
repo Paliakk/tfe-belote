@@ -14,10 +14,12 @@ async function bootstrap() {
   // CORS pour le front pour plus tard
   app.enableCors({
     origin: [
-      'http://localhost:5173',
-      'http://localhost:5500',
-      'http://127.0.0.1:5500',
+    'http://localhost:5173',
+    'https://scintillating-reverence-production.up.railway.app'
+      
     ], // ou ['http://localhost:5173'] plus tard pour le front
+    methods: 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization',
     credentials: true,
   });
 

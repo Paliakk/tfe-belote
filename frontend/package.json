@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "format": "prettier --check",
     "format:write": "prettier --write",
-    "tw:init": "tailwindcss init -p"
+    "tw:init": "tailwindcss init -p",
+    "start": "vite preview --port 4173 --strictPort"
   },
   "dependencies": {
     "@auth0/auth0-spa-js": "^2.4.1",

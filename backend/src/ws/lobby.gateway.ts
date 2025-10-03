@@ -15,7 +15,15 @@ import { FriendsService } from 'src/friends/friends.service';
 import type { SocketWithUser } from 'src/types/ws';
 import { GameEvent } from 'src/realtime/ws-events';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({
+  cors: {
+    origin: [
+      'http://localhost:5173',
+      'https://scintillating-reverence-production.up.railway.app'
+    ],
+    credentials: true
+  }
+})
 @UseGuards(AuthGuardSocket)
 export class LobbyGateway implements OnGatewayInit {
   @WebSocketServer() server: Server;

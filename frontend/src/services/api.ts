@@ -1,7 +1,10 @@
 // src/services/api.ts
 import { getToken } from "@/services/auth";
 
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||                 // fallback si jamais tu réutilises l’ancien nom
+  'http://localhost:3000';
 
 export async function api<T = any>(
   path: string,

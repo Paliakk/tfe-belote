@@ -5,7 +5,16 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { FriendsService } from 'src/friends/friends.service'; // ⬅️ NEW
 import type { SocketWithUser } from 'src/types/ws';
 
-@WebSocketGateway({ namespace: '/', cors: true })
+@WebSocketGateway({
+  namespace: '/',
+  cors: {
+    origin: [
+      'http://localhost:5173',
+      'https://scintillating-reverence-production.up.railway.app'
+    ],
+    credentials: true
+  }
+})
 export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 
