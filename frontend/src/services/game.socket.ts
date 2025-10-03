@@ -5,18 +5,19 @@ import { useGameStore } from "@/stores/game"
 import { useUiStore } from '@/stores/ui'
 import { useStatsStore } from '@/stores/stats'
 import { useRecentStore } from '@/stores/recent'
+import { getIdTokenRaw } from '@/services/auth'
+import { getToken } from '@/services/auth'
 
 let socket: Socket | null = null
 let handlersAttached = false
 
 
 export async function connectGameSocket(): Promise<Socket> {
+  
   if (socket?.connected) return socket
 
-  const [accessToken, idToken] = [
-    await getToken().catch(() => undefined),
-    sessionStorage.getItem("id_token") || undefined,
-  ]
+  const accessToken = await getToken().catch(() => undefined)
+  const idToken = await getIdTokenRaw().catch(() => undefined)
 
   socket = io(import.meta.env.VITE_API_WS ?? "http://localhost:3000", {
     transports: ["websocket"],

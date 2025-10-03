@@ -1,6 +1,7 @@
 // src/services/socket.ts
 import { io, Socket } from "socket.io-client";
 import { getToken } from "./auth";
+import { getIdTokenRaw } from './auth'
 
 let socket: Socket | null = null;
 let handlersAttached = false;
@@ -19,6 +20,7 @@ export async function connectSocket(): Promise<Socket> {
   // Récupère les tokens AVANT la construction (handshake auth)
   const accessToken = await getToken().catch(() => undefined);
   const idToken = sessionStorage.getItem("id_token") || undefined;
+  const idToken = await getIdTokenRaw().catch(() => undefined)
 
   if (!socket) {
     socket = io(wsUrl(), {
